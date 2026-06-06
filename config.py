@@ -6,7 +6,7 @@ import os
 
 # Anthropic API configuration
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL_NAME = "claude-sonnet-4-6"
+MODEL_NAME = "LGAI-EXAONE/EXAONE-4.0-1.2B-Instruct"
 
 # Ontology builder parameters
 MAX_CQ_COUNT = 10

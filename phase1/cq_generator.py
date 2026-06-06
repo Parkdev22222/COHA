@@ -6,9 +6,9 @@ using an LLM. CQs define the scope of knowledge the ontology must cover.
 """
 
 import re
-import time
-import anthropic
 from typing import Optional
+
+from llm_client import UnifiedLLMClient
 
 
 class CQGenerator:
@@ -20,12 +20,12 @@ class CQGenerator:
     axioms covering the full scope of domain knowledge.
     """
 
-    def __init__(self, llm_client: anthropic.Anthropic, domain_name: str):
+    def __init__(self, llm_client: UnifiedLLMClient, domain_name: str):
         """
         Initialize the CQ generator.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
             domain_name: Name of the domain for which CQs are generated.
         """
         self.llm_client = llm_client
@@ -76,21 +76,8 @@ and axioms to answer properly. Include questions about:
 - What rules govern agent behavior?
 - What events or states can occur?"""
 
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=2048,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                content = response.content[0].text
-                return self._parse_numbered_list(content, n)
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-                raise RuntimeError(f"LLM call failed after {max_retries} attempts: {e}") from e
+        content = self.llm_client.generate(system="", user=prompt, max_tokens=2048)
+        return self._parse_numbered_list(content, n)
 
     def _parse_numbered_list(self, text: str, expected_n: int) -> list:
         """
@@ -130,8 +117,8 @@ and axioms to answer properly. Include questions about:
 
 
 if __name__ == "__main__":
-    import os
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    from llm_client import get_client
+    client = get_client()
     generator = CQGenerator(client, "Smart Building Management")
 
     sample_docs = "A smart building has HVAC zones, temperature sensors, and energy meters."

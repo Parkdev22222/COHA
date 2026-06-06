@@ -6,9 +6,9 @@ generate OWL axioms that extend the current ontology to answer that CQ.
 Each iteration builds upon the previous, producing a coherent ontology.
 """
 
-import time
-import anthropic
 from typing import Optional
+
+from llm_client import UnifiedLLMClient
 
 
 class CQbyCQLoop:
@@ -20,12 +20,12 @@ class CQbyCQLoop:
     is passed to the LLM so new axioms are consistent with existing ones.
     """
 
-    def __init__(self, llm_client: anthropic.Anthropic, domain_name: str):
+    def __init__(self, llm_client: UnifiedLLMClient, domain_name: str):
         """
         Initialize the CQbyCQ loop.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
             domain_name: Name of the domain being modeled.
         """
         self.llm_client = llm_client
@@ -91,21 +91,8 @@ Requirements:
 Generate ONLY the new axioms that address the CQ, without duplicating existing definitions.
 Return ONLY the Turtle syntax, starting directly with prefix declarations or axioms:"""
 
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=2048,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                content = response.content[0].text.strip()
-                return self._clean_turtle_response(content)
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-                raise RuntimeError(f"LLM call failed after {max_retries} attempts: {e}") from e
+        content = self.llm_client.generate(system="", user=prompt, max_tokens=2048)
+        return self._clean_turtle_response(content)
 
     def run(self, user_story: str, cqs: list, initial_ontology_ttl: str = "") -> str:
         """
@@ -219,8 +206,8 @@ Return ONLY the Turtle syntax, starting directly with prefix declarations or axi
 
 
 if __name__ == "__main__":
-    import os
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    from llm_client import get_client
+    client = get_client()
     loop = CQbyCQLoop(client, "Smart Building Management")
 
     user_story = "As a building manager, I want to monitor HVAC zones and detect anomalies."
