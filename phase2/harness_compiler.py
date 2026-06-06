@@ -211,25 +211,26 @@ class HarnessCompiler:
 
         prop_lower = prop_name.lower()
         if any(kw in prop_lower for kw in read_keywords):
-            # This is a read-type property; write must come after
+            # Read-type property; any subsequent write must come after this read
             trigger = f"Agent attempts write/control action on '{domain_cls or 'entity'}'"
             constraint = (
                 f"Property '{prop_name}' (read/monitor) must be executed before "
                 f"any write/control action on the same entity"
             )
-            precondition = f"read_completed_{prop_name}"
+            # Use the generic flag that update_state sets for all read/monitor actions
+            precondition = "monitoring_completed"
         elif any(kw in prop_lower for kw in write_keywords):
-            # Write-type property; requires prior read
+            # Write-type property; requires prior read/monitoring phase
             trigger = f"Agent attempts action '{prop_name}'"
             constraint = (
                 f"Action '{prop_name}' requires prior monitoring/read phase "
                 f"to be completed for '{domain_cls or 'entity'}'"
             )
-            precondition = f"monitoring_completed_{domain_cls or 'entity'}"
+            precondition = "monitoring_completed"
         else:
             trigger = f"Agent invokes property action '{prop_name}'"
             constraint = f"Property '{prop_name}' must be used in correct sequence"
-            precondition = f"context_ready_{prop_name}"
+            precondition = "monitoring_completed"
 
         return HarnessRule(
             rule_id=f"PG_{self.domain}_{idx:04d}",

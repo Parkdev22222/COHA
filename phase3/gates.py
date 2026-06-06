@@ -288,6 +288,18 @@ class PhaseGate:
         self.enabled = enabled
         self._phase_rules = rule_set.get_rules_by_type(RuleType.PHASE_GATE)
 
+    # Keywords that indicate write/control actions
+    _WRITE_KEYWORDS = {
+        "write", "update", "execute", "control", "issue", "command",
+        "actuator", "set", "activate", "deactivate", "send", "dispatch",
+        "trigger", "fire", "launch", "override", "apply",
+    }
+
+    def _split_camel(self, text: str) -> set:
+        """Split camelCase/PascalCase into lowercase words."""
+        words = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)", text)
+        return {w.lower() for w in words} | {text.lower()}
+
     def check_preconditions(
         self,
         current_phase: str,
@@ -309,26 +321,24 @@ class PhaseGate:
             return True, []
 
         violations = []
-        action_lower = action.lower()
+        action_words = self._split_camel(action)
 
         for rule in self._phase_rules:
             prop_name = rule.property_name or ""
             precondition = rule.metadata.get("precondition", "")
-            trigger = rule.trigger_condition.lower()
 
-            # Check if this rule applies to the current action
-            if prop_name.lower() in action_lower or any(
-                kw in action_lower for kw in ["write", "update", "execute", "control", "issue"]
-            ):
-                # Check if the precondition is satisfied in the state
+            # Rule fires if action words overlap with write keywords or the property name
+            prop_words = self._split_camel(prop_name)
+            is_write_action = bool(action_words & self._WRITE_KEYWORDS)
+            is_prop_match = bool(prop_words & action_words)
+
+            if is_write_action or is_prop_match:
                 if precondition and not state.get(precondition, False):
-                    # Check if trigger condition matches
-                    if any(kw in trigger for kw in ["write", "control", "execute", "update", "issue"]):
-                        violations.append(
-                            f"Rule {rule.rule_id}: Precondition '{precondition}' "
-                            f"not satisfied for action '{action}'. "
-                            f"{rule.constraint_predicate}"
-                        )
+                    violations.append(
+                        f"Rule {rule.rule_id}: Precondition '{precondition}' "
+                        f"not satisfied for action '{action}'. "
+                        f"{rule.constraint_predicate}"
+                    )
 
         allowed = len(violations) == 0
         return allowed, violations

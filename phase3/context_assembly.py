@@ -44,6 +44,7 @@ class ContextAssembler:
         self._index = None
         self._embeddings = None
         self._ontology_terms = []
+        self._build_failed = False
 
         if ontology_ttl and use_ontology_guidance:
             self._ontology_terms = self._extract_ontology_terms(ontology_ttl)
@@ -55,6 +56,9 @@ class ContextAssembler:
         Encodes documents using 'all-MiniLM-L6-v2' sentence-transformers model
         and stores the resulting embeddings in a FAISS flat L2 index.
         """
+        if self._build_failed:
+            return
+
         if not self.documents:
             logger.warning("No documents provided for indexing.")
             return
@@ -81,9 +85,11 @@ class ContextAssembler:
             self._index.add(self._embeddings)
             logger.info(f"FAISS index built with {self._index.ntotal} vectors (dim={dim}).")
 
-        except ImportError as e:
-            logger.error(f"Required library not found: {e}. Using fallback keyword retrieval.")
+        except (ImportError, OSError, Exception) as e:
+            logger.error(f"Failed to build FAISS index: {e}. Using fallback keyword retrieval.")
+            self._build_failed = True
             self._index = None
+            self._model = None
 
     def retrieve(self, query: str, k: int = 5) -> list:
         """
@@ -103,8 +109,8 @@ class ContextAssembler:
 
         k = min(k, len(self.documents))
 
-        # Lazy index build
-        if self._index is None and self._model is None:
+        # Lazy index build (skip if previous attempt failed)
+        if self._index is None and self._model is None and not self._build_failed:
             self.build_index()
 
         if self._index is None:
