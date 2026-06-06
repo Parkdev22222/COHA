@@ -13,9 +13,9 @@ Gate overhead is measured externally by AgentRuntime for the GO metric.
 import re
 import time
 import logging
-import anthropic
 from typing import Tuple
 
+from llm_client import UnifiedLLMClient
 from phase2.rule_types import HarnessRule, HarnessRuleSet, RuleType
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class OutputGate:
     def __init__(
         self,
         rule_set: HarnessRuleSet,
-        llm_client: anthropic.Anthropic,
+        llm_client: UnifiedLLMClient,
         enabled: bool = True,
     ):
         """
@@ -135,7 +135,7 @@ class OutputGate:
 
         Args:
             rule_set: Compiled harness rule set.
-            llm_client: Anthropic API client for LLM judge calls.
+            llm_client: UnifiedLLMClient instance for LLM judge calls.
             enabled: If False, gate always passes (for ablation study).
         """
         self.rule_set = rule_set
@@ -204,12 +204,7 @@ class OutputGate:
         )
 
         try:
-            resp = self.llm_client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=512,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            judge_text = resp.content[0].text.strip()
+            judge_text = self.llm_client.generate(system="", user=prompt, max_tokens=512)
             first_line = judge_text.split("\n")[0].strip().upper()
 
             if first_line.startswith("YES"):
@@ -223,7 +218,7 @@ class OutputGate:
                 if not violations:
                     violations.append("OutputGate: LLM judge detected constraint violation.")
 
-        except anthropic.APIError as e:
+        except RuntimeError as e:
             logger.warning(f"OutputGate LLM judge call failed: {e}. Skipping output validation.")
             return True, []
 
@@ -384,8 +379,6 @@ class PhaseGate:
 
 
 if __name__ == "__main__":
-    import os
-    import anthropic as _anthropic
     from phase2.rule_types import HarnessRuleSet, HarnessRule, RuleType
 
     # Create a minimal rule set for testing

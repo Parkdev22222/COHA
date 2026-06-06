@@ -7,7 +7,8 @@ retrieval, or gate enforcement. Serves as the lower-bound baseline.
 
 import time
 import logging
-import anthropic
+
+from llm_client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,12 @@ class VanillaAgent:
     Used as the baseline to measure the contribution of COHA components.
     """
 
-    def __init__(self, llm_client: anthropic.Anthropic):
+    def __init__(self, llm_client: UnifiedLLMClient):
         """
         Initialize the vanilla agent.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
         """
         self.llm_client = llm_client
 
@@ -66,27 +67,16 @@ class VanillaAgent:
         Returns:
             Generated response string.
         """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": query}],
-                )
-                return response.content[0].text.strip()
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    import time as _time
-                    _time.sleep(2 ** attempt)
-                    continue
-                logger.error(f"VanillaAgent LLM call failed: {e}")
-                return f"[Error: LLM call failed after {max_retries} attempts: {e}]"
+        try:
+            return self.llm_client.generate(system="", user=query, max_tokens=1024)
+        except RuntimeError as e:
+            logger.error(f"VanillaAgent LLM call failed: {e}")
+            return f"[Error: LLM call failed: {e}]"
 
 
 if __name__ == "__main__":
-    import os
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    from llm_client import get_client
+    client = get_client()
     agent = VanillaAgent(client)
     result = agent.run("What is the capital of France?")
     print(f"Response: {result['response'][:200]}")

@@ -10,9 +10,9 @@ Supports configurable enable/disable of each gate for ablation studies.
 
 import time
 import logging
-import anthropic
 from typing import Optional
 
+from llm_client import UnifiedLLMClient
 from phase2.rule_types import HarnessRuleSet
 from phase3.gates import InputGate, OutputGate, PhaseGate
 from phase3.context_assembly import ContextAssembler
@@ -37,7 +37,7 @@ class AgentRuntime:
 
     def __init__(
         self,
-        llm_client: anthropic.Anthropic,
+        llm_client: UnifiedLLMClient,
         rule_set: HarnessRuleSet,
         context_assembler: ContextAssembler,
         config: dict,
@@ -46,7 +46,7 @@ class AgentRuntime:
         Initialize the agent runtime.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
             rule_set: Compiled harness rule set for the domain.
             context_assembler: Pre-built context assembler with document index.
             config: Configuration dict with keys:
@@ -275,31 +275,19 @@ Use the following relevant domain documents to answer queries accurately:
         Returns:
             Generated response string.
         """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    system=system,
-                    messages=[{"role": "user", "content": user}],
-                )
-                return response.content[0].text.strip()
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    import time as _time
-                    _time.sleep(2 ** attempt)
-                    continue
-                logger.error(f"LLM generation failed after {max_retries} attempts: {e}")
-                return f"[Error: LLM generation failed after {max_retries} attempts: {e}]"
+        try:
+            return self.llm_client.generate(system=system, user=user, max_tokens=1024)
+        except RuntimeError as e:
+            logger.error(f"LLM generation failed: {e}")
+            return f"[Error: LLM generation failed: {e}]"
 
 
 if __name__ == "__main__":
-    import os
+    from llm_client import get_client
     from phase2.harness_compiler import HarnessCompiler
     from domains.smart_building import DOMAIN_DOCS, MANUAL_ONTOLOGY_TTL
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = get_client()
 
     compiler = HarnessCompiler("smart_building")
     rule_set = compiler.compile(MANUAL_ONTOLOGY_TTL)

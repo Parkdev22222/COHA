@@ -9,7 +9,8 @@ No ontology grounding or gate enforcement.
 import time
 import logging
 import numpy as np
-import anthropic
+
+from llm_client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,12 @@ class RAGAgent:
     retrieved context. FAISS index is built lazily on the first call.
     """
 
-    def __init__(self, llm_client: anthropic.Anthropic, documents: list):
+    def __init__(self, llm_client: UnifiedLLMClient, documents: list):
         """
         Initialize the RAG agent.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
             documents: List of document strings to index for retrieval.
         """
         self.llm_client = llm_client
@@ -159,28 +160,17 @@ class RAGAgent:
         return [self.documents[i] for i, _ in scored[:k]]
 
     def _call_llm(self, prompt: str) -> str:
-        """Call the LLM with retry logic."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return response.content[0].text.strip()
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    import time as _time
-                    _time.sleep(2 ** attempt)
-                    continue
-                logger.error(f"RAGAgent LLM call failed: {e}")
-                return f"[Error: LLM call failed after {max_retries} attempts: {e}]"
+        """Call the LLM."""
+        try:
+            return self.llm_client.generate(system="", user=prompt, max_tokens=1024)
+        except RuntimeError as e:
+            logger.error(f"RAGAgent LLM call failed: {e}")
+            return f"[Error: LLM call failed: {e}]"
 
 
 if __name__ == "__main__":
-    import os
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    from llm_client import get_client
+    client = get_client()
 
     docs = [
         "HVAC Zone B-103 has a temperature setpoint of 22°C and currently reads 28.5°C.",

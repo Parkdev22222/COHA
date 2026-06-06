@@ -17,7 +17,8 @@ import os
 import json
 import time
 import logging
-import anthropic
+
+from llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def _load_cached_ontology(domain: str) -> dict:
 
 
 def _build_coha_variant(
-    client: anthropic.Anthropic,
+    client,
     domain: str,
     ontology_ttl: str,
     documents: list,
@@ -72,7 +73,7 @@ def _build_coha_variant(
     Build a COHA variant with the given configuration.
 
     Args:
-        client: Anthropic API client.
+        client: UnifiedLLMClient instance.
         domain: Domain identifier.
         ontology_ttl: OWL ontology in Turtle format.
         documents: Document list for retrieval.
@@ -130,21 +131,10 @@ class _NoOntoAgent:
         context = "\n\n".join(f"[Doc {i+1}] {d[:400]}" for i, d in enumerate(docs))
         prompt = f"Context:\n{context}\n\nQuery: {query}\n\nAnswer:"
 
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                resp = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                response = resp.content[0].text.strip()
-                break
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    _time.sleep(2 ** attempt)
-                    continue
-                response = f"[Error: {e}]"
+        try:
+            response = self.llm_client.generate(system="", user=prompt, max_tokens=1024)
+        except RuntimeError as e:
+            response = f"[Error: {e}]"
 
         latency_ms = (_time.time() - t) * 1000
         return {
@@ -168,13 +158,13 @@ def run_ablation_study(domain: str = "smart_building", save_results: bool = True
     Returns:
         dict mapping variant_name → evaluation metrics.
     """
-    from config import ANTHROPIC_API_KEY, RESULTS_DIR
+    from config import RESULTS_DIR
 
     print(f"\n{'='*60}")
     print(f"COHA Ablation Study — Domain: {domain}")
     print(f"{'='*60}\n")
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = get_client()
 
     # Load domain data
     domain_docs, user_stories, manual_ontology_ttl, benchmark_qa = _load_domain_data(domain)

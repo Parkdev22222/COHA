@@ -14,7 +14,8 @@ import json
 import time
 import logging
 import numpy as np
-import anthropic
+
+from llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def measure_rct(domain: str, ontology_ttl: str, n_trials: int = 10) -> dict:
 
 
 def measure_go(
-    client: anthropic.Anthropic,
+    client,
     domain: str,
     ontology_ttl: str,
     documents: list,
@@ -95,7 +96,7 @@ def measure_go(
     time vs total response time.
 
     Args:
-        client: Anthropic API client.
+        client: UnifiedLLMClient instance.
         domain: Domain identifier.
         ontology_ttl: OWL ontology in Turtle format.
         documents: Document list.
@@ -227,13 +228,13 @@ def run_efficiency_benchmark(
     Returns:
         Dict with rct, go, and msc sub-dicts.
     """
-    from config import ANTHROPIC_API_KEY, RESULTS_DIR
+    from config import RESULTS_DIR
 
     print(f"\n{'='*60}")
     print(f"COHA Efficiency Benchmark — Domain: {domain}")
     print(f"{'='*60}\n")
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = get_client()
 
     domain_docs, manual_ontology_ttl, benchmark_qa = _load_domain_data(domain)
     ontology_ttl = _get_ontology_for_domain(domain, manual_ontology_ttl)

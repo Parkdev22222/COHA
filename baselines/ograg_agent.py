@@ -9,7 +9,8 @@ import re
 import time
 import logging
 import numpy as np
-import anthropic
+
+from llm_client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class OGRAGAgent:
 
     def __init__(
         self,
-        llm_client: anthropic.Anthropic,
+        llm_client: UnifiedLLMClient,
         documents: list,
         ontology_ttl: str,
     ):
@@ -34,7 +35,7 @@ class OGRAGAgent:
         Initialize the OG-RAG agent.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
             documents: List of document strings to index.
             ontology_ttl: OWL ontology in Turtle format for term extraction.
         """
@@ -241,30 +242,19 @@ class OGRAGAgent:
         }
 
     def _call_llm(self, prompt: str) -> str:
-        """Call the LLM with retry logic."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                resp = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return resp.content[0].text.strip()
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    import time as _time
-                    _time.sleep(2 ** attempt)
-                    continue
-                logger.error(f"OGRAGAgent LLM call failed: {e}")
-                return f"[Error: LLM call failed after {max_retries} attempts: {e}]"
+        """Call the LLM."""
+        try:
+            return self.llm_client.generate(system="", user=prompt, max_tokens=1024)
+        except RuntimeError as e:
+            logger.error(f"OGRAGAgent LLM call failed: {e}")
+            return f"[Error: LLM call failed: {e}]"
 
 
 if __name__ == "__main__":
-    import os
+    from llm_client import get_client
     from domains.smart_building import DOMAIN_DOCS, MANUAL_ONTOLOGY_TTL
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = get_client()
     docs = [p.strip() for p in DOMAIN_DOCS.split("\n\n") if p.strip()]
 
     agent = OGRAGAgent(client, docs, MANUAL_ONTOLOGY_TTL)

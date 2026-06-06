@@ -12,9 +12,9 @@ Returns a complete OWL ontology in Turtle format along with quality metrics.
 
 import time
 import logging
-import anthropic
 from typing import Optional
 
+from llm_client import UnifiedLLMClient
 from phase1.cq_generator import CQGenerator
 from phase1.cqbycq_loop import CQbyCQLoop
 from phase1.consistency_validator import ConsistencyValidator
@@ -35,7 +35,7 @@ class OntologyBuilder:
 
     def __init__(
         self,
-        llm_client: anthropic.Anthropic,
+        llm_client: UnifiedLLMClient,
         domain_name: str,
         consistency_validator: ConsistencyValidator,
     ):
@@ -151,7 +151,7 @@ class OntologyBuilder:
         self,
         cqs: list,
         ontology_ttl: str,
-        llm_client: anthropic.Anthropic,
+        llm_client: UnifiedLLMClient,
     ) -> float:
         """
         Compute the fraction of CQs answerable from the ontology.
@@ -162,7 +162,7 @@ class OntologyBuilder:
         Args:
             cqs: List of Competency Questions.
             ontology_ttl: Current ontology in Turtle format.
-            llm_client: Anthropic API client.
+            llm_client: UnifiedLLMClient instance.
 
         Returns:
             Float in [0, 1] representing the fraction of covered CQs.
@@ -190,21 +190,9 @@ Answer with exactly one word: YES or NO.
 Then on the next line, briefly explain why (one sentence).
 """
             try:
-                import time as _time
-                for attempt in range(3):
-                    try:
-                        response = llm_client.messages.create(
-                            model="claude-sonnet-4-6",
-                            max_tokens=128,
-                            messages=[{"role": "user", "content": prompt}],
-                        )
-                        answer = response.content[0].text.strip().upper()
-                        if answer.startswith("YES"):
-                            covered += 1
-                        break
-                    except anthropic.APIError:
-                        if attempt < 2:
-                            _time.sleep(2 ** attempt)
+                answer = llm_client.generate(system="", user=prompt, max_tokens=128)
+                if answer.strip().upper().startswith("YES"):
+                    covered += 1
             except Exception as e:
                 logger.warning(f"Coverage check for CQ {i+1} failed: {e}")
 
@@ -227,8 +215,8 @@ Then on the next line, briefly explain why (one sentence).
 
 
 if __name__ == "__main__":
-    import os
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    from llm_client import get_client
+    client = get_client()
     validator = ConsistencyValidator()
     builder = OntologyBuilder(client, "Smart Building Management", validator)
 

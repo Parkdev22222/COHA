@@ -9,9 +9,10 @@ import time
 import logging
 import json
 import os
-import anthropic
 import numpy as np
 import pandas as pd
+
+from llm_client import UnifiedLLMClient
 
 from evaluation.metrics import (
     compute_cvr,
@@ -36,7 +37,7 @@ class COHAEvaluator:
 
     def __init__(
         self,
-        llm_client: anthropic.Anthropic,
+        llm_client: UnifiedLLMClient,
         benchmark: list,
         ontology_ttl: str,
     ):
@@ -44,7 +45,7 @@ class COHAEvaluator:
         Initialize the evaluator.
 
         Args:
-            llm_client: Anthropic API client for LLM judge calls.
+            llm_client: UnifiedLLMClient instance for LLM judge calls.
             benchmark: List of benchmark QA dicts.
             ontology_ttl: OWL ontology in Turtle format.
         """
@@ -217,11 +218,11 @@ class COHAEvaluator:
 
 
 if __name__ == "__main__":
-    import os
+    from llm_client import get_client
     from domains.smart_building import BENCHMARK_QA, MANUAL_ONTOLOGY_TTL
     from baselines.vanilla_agent import VanillaAgent
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = get_client()
     evaluator = COHAEvaluator(client, BENCHMARK_QA[:3], MANUAL_ONTOLOGY_TTL)
 
     vanilla = VanillaAgent(client)

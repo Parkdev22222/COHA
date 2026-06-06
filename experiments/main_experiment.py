@@ -16,7 +16,8 @@ import os
 import json
 import time
 import logging
-import anthropic
+
+from llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def _load_domain_data(domain: str):
 
 
 def _load_or_build_ontology(
-    client: anthropic.Anthropic,
+    client,
     domain: str,
     domain_docs: str,
     user_stories: str,
@@ -48,7 +49,7 @@ def _load_or_build_ontology(
     Load ontology from cache if available, otherwise run Phase 1 to build it.
 
     Args:
-        client: Anthropic API client.
+        client: UnifiedLLMClient instance.
         domain: Domain identifier.
         domain_docs: Domain documentation string.
         user_stories: User stories string.
@@ -91,7 +92,7 @@ def _load_or_build_ontology(
 
 
 def _build_coha_agent(
-    client: anthropic.Anthropic,
+    client,
     domain: str,
     ontology_ttl: str,
     documents: list,
@@ -101,7 +102,7 @@ def _build_coha_agent(
     Build a COHA AgentRuntime instance.
 
     Args:
-        client: Anthropic API client.
+        client: UnifiedLLMClient instance.
         domain: Domain identifier.
         ontology_ttl: OWL ontology in Turtle format.
         documents: List of document strings.
@@ -148,14 +149,14 @@ def run_main_experiment(domain: str = "smart_building", save_results: bool = Tru
     Returns:
         dict mapping agent_name → evaluation metrics.
     """
-    from config import ANTHROPIC_API_KEY, DOMAINS_CONFIG, RESULTS_DIR
+    from config import DOMAINS_CONFIG, RESULTS_DIR
 
     print(f"\n{'='*60}")
     print(f"COHA Main Experiment — Domain: {domain}")
     print(f"{'='*60}\n")
 
     # Initialize LLM client
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = get_client()
 
     # Load domain data
     domain_docs, user_stories, manual_ontology_ttl, benchmark_qa = _load_domain_data(domain)

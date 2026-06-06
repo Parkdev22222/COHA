@@ -9,7 +9,8 @@ No automated ontology generation; manual ontology is required.
 import re
 import time
 import logging
-import anthropic
+
+from llm_client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +28,12 @@ class Paper2604Agent:
     No automated ontology construction or output gate.
     """
 
-    def __init__(self, llm_client: anthropic.Anthropic, ontology_ttl: str):
+    def __init__(self, llm_client: UnifiedLLMClient, ontology_ttl: str):
         """
         Initialize the Paper 2604 agent.
 
         Args:
-            llm_client: Anthropic API client instance.
+            llm_client: UnifiedLLMClient instance.
             ontology_ttl: Manual OWL ontology in Turtle format (required).
         """
         self.llm_client = llm_client
@@ -292,30 +293,20 @@ Interaction rules governing your responses:
 
     def _call_llm(self, query: str) -> str:
         """Call the LLM with the three-layer system prompt."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                resp = self.llm_client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    system=self._system_prompt,
-                    messages=[{"role": "user", "content": query}],
-                )
-                return resp.content[0].text.strip()
-            except anthropic.APIError as e:
-                if attempt < max_retries - 1:
-                    import time as _time
-                    _time.sleep(2 ** attempt)
-                    continue
-                logger.error(f"Paper2604Agent LLM call failed: {e}")
-                return f"[Error: LLM call failed after {max_retries} attempts: {e}]"
+        try:
+            return self.llm_client.generate(
+                system=self._system_prompt, user=query, max_tokens=1024
+            )
+        except RuntimeError as e:
+            logger.error(f"Paper2604Agent LLM call failed: {e}")
+            return f"[Error: LLM call failed: {e}]"
 
 
 if __name__ == "__main__":
-    import os
+    from llm_client import get_client
     from domains.smart_building import MANUAL_ONTOLOGY_TTL
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = get_client()
     agent = Paper2604Agent(client, MANUAL_ONTOLOGY_TTL)
 
     result = agent.run("Zone B-103 reads 28.5°C with setpoint 22°C. What HVAC command?")

@@ -52,19 +52,33 @@ Examples:
         default=20,
         help="Number of queries for efficiency benchmark (default: 20)",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="LLM model name (default: config.MODEL_NAME). "
+             "Use 'claude-sonnet-4-6' for Anthropic or a HuggingFace model ID.",
+    )
 
     args = parser.parse_args()
 
-    # Validate API key
+    # Override config.MODEL_NAME if --model is provided
+    if args.model is not None:
+        import config as _config
+        _config.MODEL_NAME = args.model
+
+    # Validate API key only when using Anthropic backend
     import os
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print(
-            "ERROR: ANTHROPIC_API_KEY environment variable is not set.\n"
-            "Please export your Anthropic API key:\n"
-            "  export ANTHROPIC_API_KEY=your_api_key_here"
-        )
-        sys.exit(1)
+    import config as _config_check
+    if _config_check.MODEL_NAME.startswith("claude"):
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            print(
+                "ERROR: ANTHROPIC_API_KEY environment variable is not set.\n"
+                "Please export your Anthropic API key:\n"
+                "  export ANTHROPIC_API_KEY=your_api_key_here"
+            )
+            sys.exit(1)
 
     # Determine domains to run
     if args.domain == "both":

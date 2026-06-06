@@ -17,10 +17,12 @@ Efficiency:
 - MSC (Multi-session Consistency): consistency across context resets
 """
 
+import re as _re
 import time
 import logging
-import anthropic
 import numpy as np
+
+from llm_client import UnifiedLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _llm_judge(
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
     prompt: str,
     expected_first_word: str = "YES",
     max_retries: int = 3,
@@ -39,7 +41,7 @@ def _llm_judge(
     Binary LLM judge — returns True if first word of response matches expected.
 
     Args:
-        llm_client: Anthropic API client.
+        llm_client: UnifiedLLMClient instance.
         prompt: Judge prompt string.
         expected_first_word: Expected first word in response ("YES" or "NO").
         max_retries: Number of retry attempts.
@@ -47,25 +49,16 @@ def _llm_judge(
     Returns:
         True if response matches expected_first_word.
     """
-    for attempt in range(max_retries):
-        try:
-            response = llm_client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=64,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = response.content[0].text.strip().upper()
-            return text.startswith(expected_first_word.upper())
-        except anthropic.APIError as e:
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
-                continue
-            logger.warning(f"LLM judge call failed: {e}")
-            return False
+    try:
+        text = llm_client.generate(system="", user=prompt, max_tokens=64).upper()
+        return text.startswith(expected_first_word.upper())
+    except RuntimeError as e:
+        logger.warning(f"LLM judge call failed: {e}")
+        return False
 
 
 def _llm_score(
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
     prompt: str,
     max_retries: int = 3,
 ) -> float:
@@ -73,42 +66,32 @@ def _llm_score(
     Scalar LLM scorer — extracts a 0-1 float score from LLM response.
 
     Args:
-        llm_client: Anthropic API client.
+        llm_client: UnifiedLLMClient instance.
         prompt: Scoring prompt.
         max_retries: Number of retry attempts.
 
     Returns:
         Score in [0, 1].
     """
-    import re as _re
-    for attempt in range(max_retries):
-        try:
-            response = llm_client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=64,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = response.content[0].text.strip()
-            # Extract a number from the response
-            numbers = _re.findall(r"\d+\.?\d*", text)
-            if numbers:
-                score = float(numbers[0])
-                # Normalize if score is on a different scale
-                if score > 1.0:
-                    score = score / 10.0 if score <= 10.0 else score / 100.0
-                return min(1.0, max(0.0, score))
-            # Try to infer from YES/NO
-            if "YES" in text.upper() or "HIGH" in text.upper():
-                return 1.0
-            if "NO" in text.upper() or "LOW" in text.upper():
-                return 0.0
-            return 0.5
-        except anthropic.APIError as e:
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
-                continue
-            logger.warning(f"LLM scorer call failed: {e}")
-            return 0.5
+    try:
+        text = llm_client.generate(system="", user=prompt, max_tokens=64).strip()
+        # Extract a number from the response
+        numbers = _re.findall(r"\d+\.?\d*", text)
+        if numbers:
+            score = float(numbers[0])
+            # Normalize if score is on a different scale
+            if score > 1.0:
+                score = score / 10.0 if score <= 10.0 else score / 100.0
+            return min(1.0, max(0.0, score))
+        # Try to infer from YES/NO
+        if "YES" in text.upper() or "HIGH" in text.upper():
+            return 1.0
+        if "NO" in text.upper() or "LOW" in text.upper():
+            return 0.0
+        return 0.5
+    except RuntimeError as e:
+        logger.warning(f"LLM scorer call failed: {e}")
+        return 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +101,7 @@ def _llm_score(
 def compute_cvr(
     responses: list,
     benchmark: list,
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
 ) -> float:
     """
     Compute Constraint Violation Rate (CVR).
@@ -167,7 +150,7 @@ def compute_cvr(
 def compute_tsr(
     responses: list,
     benchmark: list,
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
 ) -> float:
     """
     Compute Task Success Rate (TSR).
@@ -218,7 +201,7 @@ def compute_tsr(
 def compute_hr(
     responses: list,
     benchmark: list,
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
 ) -> float:
     """
     Compute Hallucination Rate (HR).
@@ -269,7 +252,7 @@ def compute_hr(
 def compute_rf(
     responses: list,
     ontology_ttl: str,
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
 ) -> float:
     """
     Compute Reasoning Faithfulness (RF).
@@ -325,7 +308,7 @@ def compute_rf(
 def compute_cq_coverage_rate(
     cqs: list,
     ontology_ttl: str,
-    llm_client: anthropic.Anthropic,
+    llm_client: UnifiedLLMClient,
 ) -> float:
     """
     Compute CQ Coverage Rate.
@@ -449,10 +432,10 @@ def compute_msc(rule_sets: list) -> float:
 
 
 if __name__ == "__main__":
-    import os
+    from llm_client import get_client
     from domains.smart_building import BENCHMARK_QA, MANUAL_ONTOLOGY_TTL
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = get_client()
 
     # Test with synthetic responses
     sample_responses = [
