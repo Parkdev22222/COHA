@@ -173,7 +173,16 @@ class UnifiedLLMClient:
                     do_sample=False,
                     return_full_text=False,
                 )
-                return outputs[0]["generated_text"].strip()
+                result = outputs[0]["generated_text"]
+                # transformers >= 4.43 returns a list of message dicts when
+                # the input was also a list of dicts (chat format).
+                # Extract the last assistant message content in that case.
+                if isinstance(result, list):
+                    for msg in reversed(result):
+                        if isinstance(msg, dict) and msg.get("role") == "assistant":
+                            return msg.get("content", "").strip()
+                    return ""
+                return str(result).strip()
 
             except Exception as exc:
                 if attempt < max_retries - 1:
