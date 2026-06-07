@@ -1,0 +1,87 @@
+"""
+Handoff Artifact: structured knowledge transfer across context resets.
+
+Schema from COHA paper (§3.3):
+  iteration            : int
+  completed_cqs        : list[str]
+  accumulated_ontology : AccumulatedOntology (classes, properties, axioms, consistency, ttl)
+  formal_quality_rules : list[str]
+  domain_knowledge_rules: list[str]
+  next_cq              : str
+  coverage_gaps        : list[str]
+"""
+import json
+from dataclasses import dataclass, field
+from typing import List
+
+
+@dataclass
+class AccumulatedOntology:
+    classes: List[str] = field(default_factory=list)
+    properties: List[str] = field(default_factory=list)
+    axioms: List[str] = field(default_factory=list)
+    consistency: str = "UNKNOWN"  # "VALID" | "INVALID" | "UNKNOWN"
+    ttl: str = ""  # full Turtle text
+
+    def to_summary(self, max_classes=20, max_props=20) -> str:
+        """Compact text summary for injection into LLM prompt."""
+        lines = []
+        if self.classes:
+            lines.append(f"Classes ({len(self.classes)}): {', '.join(self.classes[:max_classes])}")
+        if self.properties:
+            lines.append(f"Properties ({len(self.properties)}): {', '.join(self.properties[:max_props])}")
+        lines.append(f"Consistency: {self.consistency}")
+        return "\n".join(lines)
+
+
+@dataclass
+class HandoffArtifact:
+    iteration: int = 0
+    completed_cqs: List[str] = field(default_factory=list)
+    accumulated_ontology: AccumulatedOntology = field(default_factory=AccumulatedOntology)
+    formal_quality_rules: List[str] = field(default_factory=list)
+    domain_knowledge_rules: List[str] = field(default_factory=list)
+    next_cq: str = ""
+    coverage_gaps: List[str] = field(default_factory=list)
+
+    @classmethod
+    def initial(cls) -> "HandoffArtifact":
+        return cls()
+
+    def to_dict(self) -> dict:
+        return {
+            "iteration": self.iteration,
+            "completed_cqs": self.completed_cqs,
+            "accumulated_ontology": {
+                "classes": self.accumulated_ontology.classes,
+                "properties": self.accumulated_ontology.properties,
+                "axioms": self.accumulated_ontology.axioms,
+                "consistency": self.accumulated_ontology.consistency,
+            },
+            "formal_quality_rules": self.formal_quality_rules,
+            "domain_knowledge_rules": self.domain_knowledge_rules,
+            "next_cq": self.next_cq,
+            "coverage_gaps": self.coverage_gaps,
+        }
+
+    def to_prompt_text(self) -> str:
+        """Compact representation for injection into LLM system prompt."""
+        parts = []
+        parts.append(f"=== Handoff Artifact (iteration {self.iteration}) ===")
+        if self.accumulated_ontology.classes or self.accumulated_ontology.properties:
+            parts.append("Current Ontology Summary:")
+            parts.append(self.accumulated_ontology.to_summary())
+        if self.formal_quality_rules:
+            parts.append(f"\n=== Formal Quality Rules ({len(self.formal_quality_rules)}) ===")
+            for r in self.formal_quality_rules:
+                parts.append(f"- {r}")
+        if self.domain_knowledge_rules:
+            parts.append(f"\n=== Domain Knowledge Rules ({len(self.domain_knowledge_rules)}) ===")
+            for r in self.domain_knowledge_rules:
+                parts.append(f"- {r}")
+        if self.coverage_gaps:
+            parts.append(f"\nCoverage Gaps: {', '.join(self.coverage_gaps[:5])}")
+        return "\n".join(parts)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
