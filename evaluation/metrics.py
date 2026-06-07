@@ -348,6 +348,96 @@ def compute_cq_coverage_rate(
 
 
 # ---------------------------------------------------------------------------
+# Ontology Structural Metrics
+# ---------------------------------------------------------------------------
+
+def compute_ontology_structural_metrics(ontology_ttl: str) -> dict:
+    """
+    Compute structural quality metrics of an OWL ontology from its Turtle source.
+
+    All metrics are derived purely from regex/string parsing — no external
+    reasoner required.
+
+    Args:
+        ontology_ttl: OWL ontology in Turtle format.
+
+    Returns:
+        dict with keys:
+          - n_classes            : number of owl:Class declarations
+          - n_object_properties  : number of owl:ObjectProperty declarations
+          - n_datatype_properties: number of owl:DatatypeProperty declarations
+          - n_subclass_axioms    : number of rdfs:subClassOf triples
+          - n_disjoint_axioms    : number of owl:disjointWith triples
+          - hierarchy_depth      : maximum depth of the subclass hierarchy
+          - axiom_density        : (object + datatype properties) / classes
+          - subsumption_ratio    : fraction of classes participating in subclass relations
+    """
+    import re
+
+    # ── Class declarations ───────────────────────────────────────────────
+    classes = set(
+        m.group(1)
+        for m in re.finditer(r"(\S+)\s+a\s+owl:Class", ontology_ttl, re.MULTILINE)
+    )
+    # Also catch full-URI form: <...> a owl:Class
+    uri_classes = re.findall(r"<[^>]+>\s+a\s+owl:Class", ontology_ttl, re.MULTILINE)
+    n_classes = max(len(classes), len(uri_classes))
+
+    # ── Property declarations ────────────────────────────────────────────
+    n_object_properties = len(set(
+        m.group(1)
+        for m in re.finditer(r"(\S+)\s+a\s+owl:ObjectProperty", ontology_ttl, re.MULTILINE)
+    ))
+    n_datatype_properties = len(set(
+        m.group(1)
+        for m in re.finditer(r"(\S+)\s+a\s+owl:DatatypeProperty", ontology_ttl, re.MULTILINE)
+    ))
+
+    # ── Subclass / disjoint axioms ───────────────────────────────────────
+    n_subclass_axioms = len(re.findall(r"rdfs:subClassOf", ontology_ttl))
+    n_disjoint_axioms = len(re.findall(r"owl:disjointWith", ontology_ttl))
+
+    # ── Hierarchy depth ──────────────────────────────────────────────────
+    # Build child→parent map from "X rdfs:subClassOf Y" triples
+    parent_map: dict = {}
+    for m in re.finditer(r"(\S+)\s+rdfs:subClassOf\s+(\S+)", ontology_ttl, re.MULTILINE):
+        child  = m.group(1).rstrip(" .")
+        parent = m.group(2).rstrip(" .")
+        # Skip owl:Thing and blank nodes
+        if parent not in ("owl:Thing", "_:") and not parent.startswith("_:"):
+            parent_map[child] = parent
+
+    hierarchy_depth = 0
+    for start in parent_map:
+        depth, visited, node = 0, set(), start
+        while node in parent_map and node not in visited:
+            visited.add(node)
+            node = parent_map[node]
+            depth += 1
+        hierarchy_depth = max(hierarchy_depth, depth)
+
+    # ── Derived metrics ──────────────────────────────────────────────────
+    n_total_props = n_object_properties + n_datatype_properties
+    axiom_density = round(n_total_props / max(n_classes, 1), 3)
+
+    classes_in_hierarchy = set(parent_map.keys()) | set(parent_map.values())
+    subsumption_ratio = round(
+        min(1.0, len(classes_in_hierarchy) / max(n_classes, 1)), 3
+    )
+
+    return {
+        "n_classes": n_classes,
+        "n_object_properties": n_object_properties,
+        "n_datatype_properties": n_datatype_properties,
+        "n_subclass_axioms": n_subclass_axioms,
+        "n_disjoint_axioms": n_disjoint_axioms,
+        "hierarchy_depth": hierarchy_depth,
+        "axiom_density": axiom_density,
+        "subsumption_ratio": subsumption_ratio,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Efficiency Metrics
 # ---------------------------------------------------------------------------
 

@@ -268,9 +268,17 @@ def run_main_experiment(
 
     # ─── Ontology Quality ────────────────────────────────────────────────
     onto_quality = evaluator.evaluate_ontology_quality(builder_result)
-    print(f"\nOntology Quality:")
-    print(f"  CQ Coverage Rate: {onto_quality['cq_coverage_rate']:.2%}")
-    print(f"  OWL Consistent: {onto_quality['is_consistent']}")
+    print(f"\nOntology Quality [{onto_method}]:")
+    print(f"  CQ Coverage Rate : {onto_quality['cq_coverage_rate']:.2%}")
+    print(f"  OWL Consistent   : {onto_quality['is_consistent']}")
+    print(f"  Classes          : {onto_quality.get('n_classes', 0)}")
+    print(f"  Object Props     : {onto_quality.get('n_object_properties', 0)}")
+    print(f"  Datatype Props   : {onto_quality.get('n_datatype_properties', 0)}")
+    print(f"  Subclass Axioms  : {onto_quality.get('n_subclass_axioms', 0)}")
+    print(f"  Disjoint Axioms  : {onto_quality.get('n_disjoint_axioms', 0)}")
+    print(f"  Hierarchy Depth  : {onto_quality.get('hierarchy_depth', 0)}")
+    print(f"  Axiom Density    : {onto_quality.get('axiom_density', 0):.3f}  (props/class)")
+    print(f"  Subsumption Ratio: {onto_quality.get('subsumption_ratio', 0):.2%}")
 
     # ─── Save Results ────────────────────────────────────────────────────
     if save_results:

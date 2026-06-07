@@ -22,6 +22,7 @@ from evaluation.metrics import (
     compute_cq_coverage_rate,
     compute_gate_overhead,
     compute_msc,
+    compute_ontology_structural_metrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,29 +162,48 @@ class COHAEvaluator:
         """
         Evaluate the quality of an automatically built ontology.
 
+        Combines semantic quality (CQ coverage, OWL consistency) with
+        structural metrics (class/property counts, hierarchy depth, etc.).
+
         Args:
             builder_result: Output dict from OntologyBuilder.build().
 
         Returns:
             Dict with ontology quality metrics:
-                cq_coverage_rate, is_consistent, n_cqs, n_iterations
+                cq_coverage_rate, is_consistent, n_cqs, n_iterations,
+                n_classes, n_object_properties, n_datatype_properties,
+                n_subclass_axioms, n_disjoint_axioms,
+                hierarchy_depth, axiom_density, subsumption_ratio
         """
         cqs = builder_result.get("cqs", [])
         ontology_ttl = builder_result.get("ontology_ttl", "")
         is_consistent = builder_result.get("is_consistent", False)
         n_iterations = builder_result.get("n_iterations", 0)
 
-        # Recompute CQ coverage rate with the evaluator's LLM client
+        # Semantic quality: CQ coverage rate
         if cqs and ontology_ttl:
             cq_coverage = compute_cq_coverage_rate(cqs, ontology_ttl, self.llm_client)
         else:
             cq_coverage = builder_result.get("cq_coverage_rate", 0.0)
+
+        # Structural quality metrics
+        structural = (
+            compute_ontology_structural_metrics(ontology_ttl)
+            if ontology_ttl
+            else {
+                "n_classes": 0, "n_object_properties": 0,
+                "n_datatype_properties": 0, "n_subclass_axioms": 0,
+                "n_disjoint_axioms": 0, "hierarchy_depth": 0,
+                "axiom_density": 0.0, "subsumption_ratio": 0.0,
+            }
+        )
 
         return {
             "cq_coverage_rate": round(cq_coverage, 4),
             "is_consistent": is_consistent,
             "n_cqs": len(cqs),
             "n_iterations": n_iterations,
+            **structural,
         }
 
     def compare_all(self, results: dict) -> pd.DataFrame:
