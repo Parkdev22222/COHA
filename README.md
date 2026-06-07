@@ -23,11 +23,19 @@ COHA is a three-phase framework that enforces domain-specific ontological constr
 Domain Docs + User Stories
          │
          ▼
-┌─────────────────────┐
-│  Phase 1            │  CQbyCQ Loop
-│  Ontology Builder   │  CQ generation → OWL axioms per CQ → consistency check
-│                     │  Output: ontology.ttl (OWL/Turtle)
-└─────────┬───────────┘
+┌──────────────────────────────────────────────┐
+│  Phase 1 — Ontology Builder                  │
+│  (select one method)                         │
+│                                              │
+│  ① CQbyCQ   : CQ generation → OWL axioms    │
+│               per CQ → consistency check     │
+│  ② Text2Onto: concept/taxonomy/relation      │
+│               extraction → OWL synthesis     │
+│  ③ OntoGPT  : single-pass YAML schema        │
+│               extraction → OWL synthesis     │
+│                                              │
+│  Output: ontology.ttl (OWL/Turtle)           │
+└────────────────────┬─────────────────────────┘
           │ ontology_ttl
           ▼
 ┌─────────────────────┐
@@ -70,8 +78,10 @@ COHA/
 │
 ├── phase1/                     # Ontology construction pipeline
 │   ├── cq_generator.py         # LLM-based competency question generation
-│   ├── cqbycq_loop.py          # Iterative CQ→axiom expansion loop
-│   ├── ontology_builder.py     # Phase 1 orchestrator
+│   ├── cqbycq_loop.py          # Iterative CQ→axiom expansion loop (CQbyCQ method)
+│   ├── text2onto.py            # Multi-pass concept/relation extraction (Text2Onto method)
+│   ├── ontogpt.py              # Single-pass structured schema extraction (OntoGPT method)
+│   ├── ontology_builder.py     # Phase 1 orchestrator — dispatches to selected method
 │   └── consistency_validator.py# OWL consistency check via owlready2 / HermiT
 │
 ├── phase2/                     # Harness compilation
@@ -105,9 +115,13 @@ COHA/
 │   └── efficiency_benchmark.py # RCT / GO / MSC throughput benchmarks
 │
 ├── cache/                      # Auto-generated (created at runtime)
-│   ├── smart_building_ontology.ttl
-│   ├── smart_building_manual_ontology.ttl
+│   ├── smart_building_ontology.ttl              # CQbyCQ
+│   ├── smart_building_text2onto_ontology.ttl    # Text2Onto
+│   ├── smart_building_ontogpt_ontology.ttl      # OntoGPT
+│   ├── smart_building_manual_ontology.ttl       # hand-crafted reference
 │   ├── military_tactical_ontology.ttl
+│   ├── military_tactical_text2onto_ontology.ttl
+│   ├── military_tactical_ontogpt_ontology.ttl
 │   └── military_tactical_manual_ontology.ttl
 │
 └── results/                    # Auto-generated JSON result files
@@ -122,21 +136,60 @@ COHA/
 ## Module Descriptions
 
 ### `config.py`
-Global settings: `MODEL_NAME`, `ANTHROPIC_API_KEY`, `DOMAINS_CONFIG`, `EVAL_CONFIG`, `RESULTS_DIR`, `CACHE_DIR`.
+Global settings: `MODEL_NAME`, `ONTOLOGY_METHOD`, `ANTHROPIC_API_KEY`, `DOMAINS_CONFIG`, `EVAL_CONFIG`, `RESULTS_DIR`, `CACHE_DIR`.
 
 ### `llm_client.py`
 `UnifiedLLMClient` wraps both backends behind a single `generate(system, user, max_tokens)` interface. All heavy imports (`anthropic`, `transformers`, `torch`) are deferred to first use. Includes 3-attempt exponential-backoff retry for both backends.
 
 ### Phase 1 — `phase1/`
 
+Three interchangeable ontology construction methods are available, all producing the same output format (`ontology_ttl`, `cqs`, `cq_coverage_rate`, `is_consistent`, `n_iterations`).
+
+#### Method ① CQbyCQ (default)
+
 | File | Role |
 |---|---|
 | `cq_generator.py` | Prompts the LLM to generate `n` competency questions from domain docs and user stories |
-| `cqbycq_loop.py` | Iterates over each CQ: feeds doc + CQ to LLM, extracts OWL axioms, accumulates into running ontology |
-| `ontology_builder.py` | Orchestrates the full Phase 1 pipeline; returns `ontology_ttl`, `cqs`, `cq_coverage_rate`, `is_consistent`, `n_iterations` |
-| `consistency_validator.py` | Loads Turtle ontology via owlready2, invokes HermiT reasoner; falls back gracefully if reasoner unavailable |
+| `cqbycq_loop.py` | Iterates over each CQ: feeds doc + current ontology to LLM, extracts OWL axioms, accumulates incrementally |
+| `consistency_validator.py` | Validates OWL consistency after each CQ via owlready2 / HermiT; triggers regeneration on violation |
 
-The built ontology is cached to `cache/{domain}_ontology.json` and exported as `cache/{domain}_ontology.ttl`.
+Pipeline: `generate CQs → for each CQ: generate axioms → validate → accumulate`
+
+#### Method ② Text2Onto
+
+| File | Role |
+|---|---|
+| `text2onto.py` | `Text2OntoLearner` — 4-step multi-pass extraction pipeline |
+
+Steps:
+1. **Concept extraction** — LLM identifies domain entity types (OWL Classes) from raw text
+2. **Taxonomy construction** — LLM organises concepts into an is-a (rdfs:subClassOf) hierarchy
+3. **Relation extraction** — LLM extracts ObjectProperties (`Domain --prop--> Range`) and DatatypeProperties (`Class .attr: xsd:type`)
+4. **OWL synthesis** — assembles extracted elements into valid Turtle
+
+Reference: Cimiano & Völker (2005), *text2onto — A framework for ontology learning and data-driven change discovery*
+
+#### Method ③ OntoGPT
+
+| File | Role |
+|---|---|
+| `ontogpt.py` | `OntoGPTExtractor` — single-pass structured schema extraction |
+
+Steps:
+1. **Structured extraction** — LLM fills a predefined YAML schema (analogous to OntoGPT's LinkML templates) with five named slots: `classes`, `subclass_of`, `object_properties`, `datatype_properties`, `disjoint_classes`
+2. **OWL synthesis** — converts the parsed schema into valid Turtle; falls back to manual line-by-line parsing if PyYAML fails
+
+Reference: Caufield et al. (2024), *OntoGPT: A framework for ontology extraction using large language models* — https://github.com/monarch-initiative/ontogpt
+
+#### Method selection and caching
+
+`OntologyBuilder.build(method="cqbycq"|"text2onto"|"ontogpt")` dispatches to the chosen method. Each method writes its own cache file so multiple methods can coexist:
+
+| Method | Cache JSON | Turtle export |
+|---|---|---|
+| `cqbycq` | `cache/{domain}_ontology.json` | `cache/{domain}_ontology.ttl` |
+| `text2onto` | `cache/{domain}_text2onto_ontology.json` | `cache/{domain}_text2onto_ontology.ttl` |
+| `ontogpt` | `cache/{domain}_ontogpt_ontology.json` | `cache/{domain}_ontogpt_ontology.ttl` |
 
 ### Phase 2 — `phase2/`
 
@@ -216,6 +269,23 @@ python run_experiments.py --model claude-sonnet-4-6 --domain smart_building
 python run_experiments.py --model meta-llama/Llama-3.2-1B-Instruct --domain both
 ```
 
+### Select ontology construction method:
+```bash
+# Default — CQbyCQ iterative loop (paper method)
+python run_experiments.py --onto-method cqbycq
+
+# Text2Onto — multi-pass concept/relation extraction
+python run_experiments.py --onto-method text2onto --domain smart_building
+
+# OntoGPT — single-pass structured schema extraction
+python run_experiments.py --onto-method ontogpt --domain military_tactical
+```
+
+The default method can also be changed permanently in `config.py`:
+```python
+ONTOLOGY_METHOD = "text2onto"  # "cqbycq" | "text2onto" | "ontogpt"
+```
+
 ### Skip saving results to disk:
 ```bash
 python run_experiments.py --experiment main --domain smart_building --no-save
@@ -233,8 +303,12 @@ results = run_main_experiment("military_tactical")
 
 | Path | Description |
 |---|---|
-| `cache/{domain}_ontology.json` | Cached Phase 1 result (ontology + CQ coverage metrics) |
-| `cache/{domain}_ontology.ttl` | Auto-generated OWL ontology in Turtle format (Protégé-compatible) |
+| `cache/{domain}_ontology.json` | Cached Phase 1 result — CQbyCQ (ontology + CQ coverage metrics) |
+| `cache/{domain}_ontology.ttl` | Auto-generated OWL ontology — CQbyCQ (Protégé-compatible) |
+| `cache/{domain}_text2onto_ontology.json` | Cached Phase 1 result — Text2Onto |
+| `cache/{domain}_text2onto_ontology.ttl` | Auto-generated OWL ontology — Text2Onto |
+| `cache/{domain}_ontogpt_ontology.json` | Cached Phase 1 result — OntoGPT |
+| `cache/{domain}_ontogpt_ontology.ttl` | Auto-generated OWL ontology — OntoGPT |
 | `cache/{domain}_manual_ontology.ttl` | Hand-crafted reference ontology for each domain |
 | `results/{domain}_main_results.json` | Main experiment: CVR, TSR, HR, RF per agent |
 | `results/{domain}_ablation_results.json` | Ablation: metrics per COHA variant |
