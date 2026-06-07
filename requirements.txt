@@ -1,10 +1,7 @@
 anthropic>=0.40.0
 owlready2>=0.46
-sentence-transformers>=3.0.0
 numpy>=1.26.0
 pandas>=2.2.0
-scikit-learn>=1.4.0
-faiss-cpu>=1.8.0
 tqdm>=4.66.0
 transformers>=4.51.0
 torch>=2.2.0
