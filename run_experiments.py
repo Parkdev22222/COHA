@@ -27,6 +27,8 @@ Examples:
   python run_experiments.py --experiment ablation --domain both
   python run_experiments.py --experiment efficiency --domain military_tactical
   python run_experiments.py --experiment all --domain both
+  python run_experiments.py --experiment main --onto-method text2onto --domain smart_building
+  python run_experiments.py --experiment main --onto-method all --domain both
         """,
     )
     parser.add_argument(
@@ -61,22 +63,30 @@ Examples:
     )
     parser.add_argument(
         "--onto-method",
-        choices=["cqbycq", "text2onto", "ontogpt"],
+        choices=["cqbycq", "text2onto", "ontogpt", "all"],
         default=None,
         help="Ontology construction method (default: config.ONTOLOGY_METHOD = cqbycq). "
              "cqbycq: iterative CQ-by-CQ loop. "
              "text2onto: multi-pass concept/relation extraction. "
-             "ontogpt: single-pass structured schema extraction.",
+             "ontogpt: single-pass structured schema extraction. "
+             "all: run all three methods sequentially and save separate result files.",
     )
 
     args = parser.parse_args()
 
-    # Override config settings if CLI flags provided
+    # Override model if provided
     import config as _config
     if args.model is not None:
         _config.MODEL_NAME = args.model
-    if args.onto_method is not None:
+
+    # Determine which ontology methods to run
+    if args.onto_method == "all":
+        onto_methods = ["cqbycq", "text2onto", "ontogpt"]
+    elif args.onto_method is not None:
+        onto_methods = [args.onto_method]
         _config.ONTOLOGY_METHOD = args.onto_method
+    else:
+        onto_methods = [_config.ONTOLOGY_METHOD]
 
     # Validate API key only when using Anthropic backend
     import os
@@ -113,15 +123,20 @@ Examples:
         print(f"{'#'*70}")
 
         if args.experiment in ["main", "all"]:
-            try:
-                print(f"\n--- Running Main Experiment ({domain}) ---")
-                main_res = run_main_experiment(
-                    domain, save_results=save, onto_method=_config.ONTOLOGY_METHOD
-                )
-                domain_results["main"] = main_res
-            except Exception as e:
-                logging.error(f"Main experiment failed for {domain}: {e}", exc_info=True)
-                domain_results["main"] = {"error": str(e)}
+            for onto_method in onto_methods:
+                result_key = f"main_{onto_method}" if len(onto_methods) > 1 else "main"
+                try:
+                    print(f"\n--- Running Main Experiment ({domain}, method={onto_method}) ---")
+                    main_res = run_main_experiment(
+                        domain, save_results=save, onto_method=onto_method
+                    )
+                    domain_results[result_key] = main_res
+                except Exception as e:
+                    logging.error(
+                        f"Main experiment failed for {domain} [{onto_method}]: {e}",
+                        exc_info=True,
+                    )
+                    domain_results[result_key] = {"error": str(e)}
 
         if args.experiment in ["ablation", "all"]:
             try:
@@ -155,18 +170,34 @@ Examples:
     for domain, results in all_results.items():
         print(f"\nDomain: {domain}")
 
-        if "main" in results and isinstance(results["main"], dict) and "error" not in results["main"]:
-            main_res = results["main"]
-            # Find COHA-Full vs best baseline
+        # Collect main-experiment entries: supports both "main" (single) and
+        # "main_cqbycq" / "main_text2onto" / "main_ontogpt" (multi-method).
+        main_entries = [
+            (k, k[len("main_"):] if k.startswith("main_") else onto_methods[0])
+            for k in results
+            if k == "main" or k.startswith("main_")
+        ]
+        for result_key, method_label in main_entries:
+            main_res = results[result_key]
+            if not (isinstance(main_res, dict) and "error" not in main_res):
+                continue
+            prefix = f"  [{method_label}] " if len(main_entries) > 1 else "  "
             if "COHA-Full" in main_res:
                 coha_cvr = main_res["COHA-Full"].get("cvr", "N/A")
                 coha_tsr = main_res["COHA-Full"].get("tsr", "N/A")
-                print(f"  COHA-Full:    CVR={coha_cvr:.2%}, TSR={coha_tsr:.2%}" if isinstance(coha_cvr, float) else f"  COHA-Full:    CVR={coha_cvr}, TSR={coha_tsr}")
-
+                print(
+                    f"{prefix}COHA-Full:    CVR={coha_cvr:.2%}, TSR={coha_tsr:.2%}"
+                    if isinstance(coha_cvr, float)
+                    else f"{prefix}COHA-Full:    CVR={coha_cvr}, TSR={coha_tsr}"
+                )
             if "VanillaAgent" in main_res:
                 v_cvr = main_res["VanillaAgent"].get("cvr", "N/A")
                 v_tsr = main_res["VanillaAgent"].get("tsr", "N/A")
-                print(f"  VanillaAgent: CVR={v_cvr:.2%}, TSR={v_tsr:.2%}" if isinstance(v_cvr, float) else f"  VanillaAgent: CVR={v_cvr}, TSR={v_tsr}")
+                print(
+                    f"{prefix}VanillaAgent: CVR={v_cvr:.2%}, TSR={v_tsr:.2%}"
+                    if isinstance(v_cvr, float)
+                    else f"{prefix}VanillaAgent: CVR={v_cvr}, TSR={v_tsr}"
+                )
 
         if "efficiency" in results and isinstance(results["efficiency"], dict) and "error" not in results["efficiency"]:
             eff = results["efficiency"]

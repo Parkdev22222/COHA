@@ -275,7 +275,8 @@ def run_main_experiment(
     # ─── Save Results ────────────────────────────────────────────────────
     if save_results:
         os.makedirs(RESULTS_DIR, exist_ok=True)
-        save_path = os.path.join(RESULTS_DIR, f"{domain}_main_results.json")
+        method_tag = f"_{onto_method}" if onto_method != "cqbycq" else ""
+        save_path = os.path.join(RESULTS_DIR, f"{domain}{method_tag}_main_results.json")
 
         serializable_results = {}
         for name, metrics in all_results.items():
@@ -286,6 +287,7 @@ def run_main_experiment(
 
         output = {
             "domain": domain,
+            "onto_method": onto_method,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "ontology_quality": onto_quality,
             "results": serializable_results,
