@@ -147,6 +147,7 @@ class UnifiedLLMClient:
                 model=self.model_name,
                 device_map="auto",
                 torch_dtype="auto",
+                trust_remote_code=True,
             )
             logger.info("UnifiedLLMClient: HuggingFace pipeline ready.")
 

@@ -88,6 +88,12 @@ def _load_or_build_ontology(
         json.dump(cache_data, f, indent=2)
     print(f"[Phase 1] Ontology cached to {cache_path}")
 
+    # Save standalone .ttl file for use in external tools (Protégé, SPARQL, etc.)
+    ttl_path = os.path.join(CACHE_DIR, f"{domain}_ontology.ttl")
+    with open(ttl_path, "w", encoding="utf-8") as f:
+        f.write(result["ontology_ttl"])
+    print(f"[Phase 1] Ontology saved as Turtle: {ttl_path}")
+
     return result
 
 
@@ -174,6 +180,15 @@ def run_main_experiment(domain: str = "smart_building", save_results: bool = Tru
     auto_ontology_ttl = builder_result["ontology_ttl"]
     cq_coverage = builder_result["cq_coverage_rate"]
     is_consistent = builder_result["is_consistent"]
+
+    # Save manual (reference) ontology as .ttl for external tooling
+    from config import CACHE_DIR
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    manual_ttl_path = os.path.join(CACHE_DIR, f"{domain}_manual_ontology.ttl")
+    if not os.path.exists(manual_ttl_path):
+        with open(manual_ttl_path, "w", encoding="utf-8") as f:
+            f.write(manual_ontology_ttl)
+        print(f"[Phase 1] Manual ontology saved as Turtle: {manual_ttl_path}")
 
     print(f"[Phase 1] CQ Coverage: {cq_coverage:.2%}, Consistent: {is_consistent}")
 
