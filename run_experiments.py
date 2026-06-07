@@ -59,13 +59,24 @@ Examples:
         help="LLM model name (default: config.MODEL_NAME). "
              "Use 'claude-sonnet-4-6' for Anthropic or a HuggingFace model ID.",
     )
+    parser.add_argument(
+        "--onto-method",
+        choices=["cqbycq", "text2onto", "ontogpt"],
+        default=None,
+        help="Ontology construction method (default: config.ONTOLOGY_METHOD = cqbycq). "
+             "cqbycq: iterative CQ-by-CQ loop. "
+             "text2onto: multi-pass concept/relation extraction. "
+             "ontogpt: single-pass structured schema extraction.",
+    )
 
     args = parser.parse_args()
 
-    # Override config.MODEL_NAME if --model is provided
+    # Override config settings if CLI flags provided
+    import config as _config
     if args.model is not None:
-        import config as _config
         _config.MODEL_NAME = args.model
+    if args.onto_method is not None:
+        _config.ONTOLOGY_METHOD = args.onto_method
 
     # Validate API key only when using Anthropic backend
     import os
@@ -104,7 +115,9 @@ Examples:
         if args.experiment in ["main", "all"]:
             try:
                 print(f"\n--- Running Main Experiment ({domain}) ---")
-                main_res = run_main_experiment(domain, save_results=save)
+                main_res = run_main_experiment(
+                    domain, save_results=save, onto_method=_config.ONTOLOGY_METHOD
+                )
                 domain_results["main"] = main_res
             except Exception as e:
                 logging.error(f"Main experiment failed for {domain}: {e}", exc_info=True)

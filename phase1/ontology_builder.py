@@ -58,45 +58,52 @@ class OntologyBuilder:
         domain_docs: str,
         user_stories: str,
         n_cqs: int = 10,
+        method: str = "cqbycq",
     ) -> dict:
         """
         Build an OWL ontology from domain documentation and user stories.
 
-        Runs the full Phase 1 pipeline:
-        1. Generates n_cqs Competency Questions
-        2. Runs the CQbyCQ loop to construct the ontology
-        3. Validates consistency, regenerating inconsistent sections up to MAX_RETRY times
-        4. Computes CQ coverage rate
-
         Args:
             domain_docs: Textual description of the domain.
             user_stories: User stories describing agent tasks.
-            n_cqs: Number of CQs to generate.
+            n_cqs: Number of CQs to generate (used for coverage evaluation in all methods).
+            method: Ontology construction method. One of:
+                - "cqbycq"   (default) — iterative CQ-by-CQ loop
+                - "text2onto"          — Text2Onto-style multi-pass extraction
+                - "ontogpt"            — OntoGPT-style single-pass schema extraction
 
         Returns:
             dict with keys:
-                - ontology_ttl: str - Final ontology in Turtle format
-                - cqs: list[str] - Generated competency questions
-                - cq_coverage_rate: float - Fraction of CQs answerable from ontology
-                - is_consistent: bool - Whether ontology passed consistency check
-                - n_iterations: int - Total CQ iterations performed
+                - ontology_ttl: str
+                - cqs: list[str]
+                - cq_coverage_rate: float
+                - is_consistent: bool
+                - n_iterations: int
         """
+        if method == "text2onto":
+            return self._build_text2onto(domain_docs, user_stories, n_cqs)
+        if method == "ontogpt":
+            return self._build_ontogpt(domain_docs, user_stories, n_cqs)
+        return self._build_cqbycq(domain_docs, user_stories, n_cqs)
+
+    # ------------------------------------------------------------------
+    # Per-method build implementations
+    # ------------------------------------------------------------------
+
+    def _build_cqbycq(self, domain_docs: str, user_stories: str, n_cqs: int) -> dict:
+        """Original CQbyCQ iterative ontology construction."""
         from config import MAX_RETRY
 
-        print(f"[OntologyBuilder] Phase 1: Generating {n_cqs} Competency Questions...")
+        print(f"[OntologyBuilder] Phase 1 (CQbyCQ): Generating {n_cqs} CQs...")
         cqs = self.cq_generator.generate(domain_docs, user_stories, n_cqs)
         print(f"[OntologyBuilder] Generated {len(cqs)} CQs.")
 
-        # Use first user story as representative context
-        representative_story = user_stories.strip().split("\n")[0] if user_stories.strip() else user_stories
+        representative_story = (
+            user_stories.strip().split("\n")[0] if user_stories.strip() else user_stories
+        )
 
-        ontology_ttl = ""
+        accumulated = self._make_base_prefix()
         n_iterations = 0
-        is_consistent = False
-
-        # CQbyCQ loop with consistency validation per CQ
-        base_prefix = self._make_base_prefix()
-        accumulated = base_prefix
 
         for i, cq in enumerate(cqs):
             print(f"[OntologyBuilder] CQ {i+1}/{len(cqs)}: {cq[:70]}...")
@@ -117,24 +124,20 @@ class OntologyBuilder:
                         break
                     else:
                         print(
-                            f"[OntologyBuilder] Inconsistency on CQ {i+1} attempt {attempt+1}: "
-                            f"{viols[:2]}. Regenerating..."
+                            f"[OntologyBuilder] Inconsistency on CQ {i+1} "
+                            f"attempt {attempt+1}: {viols[:2]}. Regenerating..."
                         )
                 except Exception as e:
                     print(f"[OntologyBuilder] Error on CQ {i+1} attempt {attempt+1}: {e}")
 
             if not success:
-                # Accept the last candidate with a warning rather than skipping entirely
                 print(f"[OntologyBuilder] Skipping CQ {i+1} after {MAX_RETRY} failed attempts.")
 
         ontology_ttl = accumulated
-
-        # Final consistency check
         is_consistent, final_viols = self.validator.validate(ontology_ttl)
         if not is_consistent:
-            print(f"[OntologyBuilder] Warning: Final ontology has consistency issues: {final_viols[:3]}")
+            print(f"[OntologyBuilder] Warning: consistency issues: {final_viols[:3]}")
 
-        # Compute CQ coverage rate
         print("[OntologyBuilder] Computing CQ coverage rate...")
         cq_coverage_rate = self.compute_cq_coverage_rate(cqs, ontology_ttl, self.llm_client)
         print(f"[OntologyBuilder] CQ Coverage Rate: {cq_coverage_rate:.2%}")
@@ -145,6 +148,58 @@ class OntologyBuilder:
             "cq_coverage_rate": cq_coverage_rate,
             "is_consistent": is_consistent,
             "n_iterations": n_iterations,
+        }
+
+    def _build_text2onto(self, domain_docs: str, user_stories: str, n_cqs: int) -> dict:
+        """Text2Onto-style multi-pass extraction (4 steps)."""
+        from phase1.text2onto import Text2OntoLearner
+
+        print("[OntologyBuilder] Phase 1 (Text2Onto): Starting extraction pipeline...")
+        learner = Text2OntoLearner(self.llm_client, self.domain_name)
+        result = learner.learn(domain_docs)
+        ontology_ttl = result["ontology_ttl"]
+
+        is_consistent, viols = self.validator.validate(ontology_ttl)
+        if not is_consistent:
+            print(f"[OntologyBuilder] Warning: consistency issues: {viols[:3]}")
+
+        print("[OntologyBuilder] Generating CQs for coverage evaluation...")
+        cqs = self.cq_generator.generate(domain_docs, user_stories, n_cqs)
+        cq_coverage_rate = self.compute_cq_coverage_rate(cqs, ontology_ttl, self.llm_client)
+        print(f"[OntologyBuilder] CQ Coverage Rate: {cq_coverage_rate:.2%}")
+
+        return {
+            "ontology_ttl": ontology_ttl,
+            "cqs": cqs,
+            "cq_coverage_rate": cq_coverage_rate,
+            "is_consistent": is_consistent,
+            "n_iterations": 4,
+        }
+
+    def _build_ontogpt(self, domain_docs: str, user_stories: str, n_cqs: int) -> dict:
+        """OntoGPT-style single-pass schema extraction."""
+        from phase1.ontogpt import OntoGPTExtractor
+
+        print("[OntologyBuilder] Phase 1 (OntoGPT): Starting structured extraction...")
+        extractor = OntoGPTExtractor(self.llm_client, self.domain_name)
+        result = extractor.extract(domain_docs, user_stories)
+        ontology_ttl = result["ontology_ttl"]
+
+        is_consistent, viols = self.validator.validate(ontology_ttl)
+        if not is_consistent:
+            print(f"[OntologyBuilder] Warning: consistency issues: {viols[:3]}")
+
+        print("[OntologyBuilder] Generating CQs for coverage evaluation...")
+        cqs = self.cq_generator.generate(domain_docs, user_stories, n_cqs)
+        cq_coverage_rate = self.compute_cq_coverage_rate(cqs, ontology_ttl, self.llm_client)
+        print(f"[OntologyBuilder] CQ Coverage Rate: {cq_coverage_rate:.2%}")
+
+        return {
+            "ontology_ttl": ontology_ttl,
+            "cqs": cqs,
+            "cq_coverage_rate": cq_coverage_rate,
+            "is_consistent": is_consistent,
+            "n_iterations": 2,
         }
 
     def compute_cq_coverage_rate(

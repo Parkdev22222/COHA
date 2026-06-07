@@ -44,6 +44,7 @@ def _load_or_build_ontology(
     domain_docs: str,
     user_stories: str,
     n_cqs: int,
+    onto_method: str = "cqbycq",
 ) -> dict:
     """
     Load ontology from cache if available, otherwise run Phase 1 to build it.
@@ -54,26 +55,29 @@ def _load_or_build_ontology(
         domain_docs: Domain documentation string.
         user_stories: User stories string.
         n_cqs: Number of CQs to generate.
+        onto_method: Ontology construction method ("cqbycq", "text2onto", "ontogpt").
 
     Returns:
         OntologyBuilder result dict.
     """
     from config import CACHE_DIR
 
-    cache_path = os.path.join(CACHE_DIR, f"{domain}_ontology.json")
+    # Each method gets its own cache file; cqbycq keeps the legacy name.
+    method_tag = f"_{onto_method}" if onto_method != "cqbycq" else ""
+    cache_path = os.path.join(CACHE_DIR, f"{domain}{method_tag}_ontology.json")
 
     if os.path.exists(cache_path):
         print(f"[Phase 1] Loading cached ontology from {cache_path}")
         with open(cache_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    print(f"[Phase 1] Building ontology for domain: {domain}")
+    print(f"[Phase 1] Building ontology for domain: {domain} (method: {onto_method})")
     from phase1.consistency_validator import ConsistencyValidator
     from phase1.ontology_builder import OntologyBuilder
 
     validator = ConsistencyValidator()
     builder = OntologyBuilder(client, domain.replace("_", " ").title(), validator)
-    result = builder.build(domain_docs, user_stories, n_cqs=n_cqs)
+    result = builder.build(domain_docs, user_stories, n_cqs=n_cqs, method=onto_method)
 
     # Cache the result
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -88,8 +92,8 @@ def _load_or_build_ontology(
         json.dump(cache_data, f, indent=2)
     print(f"[Phase 1] Ontology cached to {cache_path}")
 
-    # Save standalone .ttl file for use in external tools (Protégé, SPARQL, etc.)
-    ttl_path = os.path.join(CACHE_DIR, f"{domain}_ontology.ttl")
+    # Save standalone .ttl for use in external tools (Protégé, SPARQL, etc.)
+    ttl_path = os.path.join(CACHE_DIR, f"{domain}{method_tag}_ontology.ttl")
     with open(ttl_path, "w", encoding="utf-8") as f:
         f.write(result["ontology_ttl"])
     print(f"[Phase 1] Ontology saved as Turtle: {ttl_path}")
@@ -144,13 +148,19 @@ def _build_coha_agent(
     return AgentRuntime(client, rule_set, assembler, config)
 
 
-def run_main_experiment(domain: str = "smart_building", save_results: bool = True):
+def run_main_experiment(
+    domain: str = "smart_building",
+    save_results: bool = True,
+    onto_method: str = None,
+):
     """
     Run the main COHA experiment: COHA vs all baselines.
 
     Args:
         domain: Domain to evaluate ("smart_building" or "military_tactical").
         save_results: Whether to save results to JSON.
+        onto_method: Ontology construction method ("cqbycq", "text2onto", "ontogpt").
+                     Defaults to config.ONTOLOGY_METHOD.
 
     Returns:
         dict mapping agent_name → evaluation metrics.
@@ -164,6 +174,11 @@ def run_main_experiment(domain: str = "smart_building", save_results: bool = Tru
     # Initialize LLM client
     client = get_client()
 
+    # Resolve ontology method (arg > config default)
+    if onto_method is None:
+        import config as _cfg
+        onto_method = getattr(_cfg, "ONTOLOGY_METHOD", "cqbycq")
+
     # Load domain data
     domain_docs, user_stories, manual_ontology_ttl, benchmark_qa = _load_domain_data(domain)
     domain_config = DOMAINS_CONFIG.get(domain, {})
@@ -175,7 +190,7 @@ def run_main_experiment(domain: str = "smart_building", save_results: bool = Tru
 
     # ─── Phase 1: Ontology Building ─────────────────────────────────────
     builder_result = _load_or_build_ontology(
-        client, domain, domain_docs, user_stories, n_cqs
+        client, domain, domain_docs, user_stories, n_cqs, onto_method
     )
     auto_ontology_ttl = builder_result["ontology_ttl"]
     cq_coverage = builder_result["cq_coverage_rate"]
