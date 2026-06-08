@@ -30,7 +30,9 @@ def run_ablation_study(save_results: bool = True) -> dict:
     print("=" * 60 + "\n")
 
     client = get_client()
-    evaluator = COHAEvaluator(client, ALL_CQS, GOLD_STANDARD_TTL)
+    from experiments.main_experiment import _get_eval_client
+    eval_client = _get_eval_client(client)
+    evaluator = COHAEvaluator(eval_client, ALL_CQS, GOLD_STANDARD_TTL)
 
     ablation_conditions = [
         ("COHA-full",        lambda: COHAHarness(client, HarnessConfig.coha_full()).run(ALL_CQS, USER_STORY)),
