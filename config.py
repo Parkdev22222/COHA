@@ -1,7 +1,7 @@
 """Global configuration for COHA v2."""
 import os
 
-MODEL_NAME = "LGAI-EXAONE/EXAONE-4.0-1.2B"
+MODEL_NAME = "LGAI-EXAONE/EXAONE-4.0-32B"
 MAX_RETRIES = 3
 GATE_TIMEOUT = 60.0
 N_CQS_PER_SUBDOMAIN = 20  # 20 * 3 subdomains = 60 total
