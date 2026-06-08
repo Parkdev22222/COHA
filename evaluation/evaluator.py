@@ -21,8 +21,9 @@ class COHAEvaluator:
         from evaluation.metrics import (
             compute_ccr, compute_oc, compute_sc,
             compute_rar, compute_go, compute_des_scaffold,
+            compute_sparql_ccr, compute_llm_judge_detailed, compute_overall_score,
         )
-        from coha.owl_utils import extract_structural_metrics
+        from coha.owl_utils import extract_structural_metrics, extract_deep_structural_metrics
 
         onto_ttl = harness_result.get("ontology_ttl", "")
 
@@ -37,16 +38,36 @@ class COHAEvaluator:
         )
         struct = extract_structural_metrics(onto_ttl)
 
+        print(f"  [Evaluator] Computing deep structural metrics for {variant_name}...")
+        deep_struct = extract_deep_structural_metrics(onto_ttl)
+
+        print(f"  [Evaluator] Computing SPARQL CCR for {variant_name}...")
+        sparql_ccr = compute_sparql_ccr(self.cqs, onto_ttl, self.llm_client)
+
+        print(f"  [Evaluator] Computing 4-dim LLM judge for {variant_name}...")
+        llm_judge = compute_llm_judge_detailed(self.cqs, onto_ttl, self.llm_client)
+
+        overall = compute_overall_score(ccr, oc, deep_struct)
         des = compute_des_scaffold(onto_ttl, self.cqs)
 
         return {
             "variant": variant_name,
             "ccr": round(ccr, 4),
+            "sparql_ccr": sparql_ccr["coverage_rate"],
             "oc": oc,
             "sc": sc,
+            "llm_judge": {
+                "mean_answerability": llm_judge["mean_answerability"],
+                "mean_completeness": llm_judge["mean_completeness"],
+                "mean_precision": llm_judge["mean_precision"],
+                "mean_domain_validity": llm_judge["mean_domain_validity"],
+                "mean_overall": llm_judge["mean_overall"],
+                "verdicts": llm_judge["verdicts"],
+            },
+            "overall_score": overall,
             "rar": rar,
             "go": round(go, 4),
-            "structural": struct,
+            "structural": {**struct, **deep_struct},
             "n_fq_rules": len(harness_result.get("final_fq_rules", [])),
             "n_dk_rules": len(harness_result.get("final_dk_rules", [])),
             "n_retries": harness_result.get("n_retries_total", 0),
@@ -58,15 +79,20 @@ class COHAEvaluator:
         """Create comparison DataFrame for all variants."""
         rows = []
         for name, m in results.items():
-            rows.append({
+            judge = m.get("llm_judge", {})
+        rows.append({
                 "Variant": name,
-                "CCR up": f"{m.get('ccr', 0):.2%}",
-                "OC up": "Y" if m.get("oc") else "N",
-                "SC up": f"{m.get('sc', {}).get('sc', 0):.2%}",
-                "GO down": f"{m.get('go', 0):.2%}",
-                "FQ Rules": m.get("n_fq_rules", 0),
-                "DK Rules": m.get("n_dk_rules", 0),
-                "Retries": m.get("n_retries", 0),
+                "CCR↑": f"{m.get('ccr', 0):.2%}",
+                "SPARQL-CCR↑": f"{m.get('sparql_ccr', 0):.2%}",
+                "OC↑": "Y" if m.get("oc") else "N",
+                "SC↑": f"{m.get('sc', {}).get('sc', 0):.2%}",
+                "Judge(1-5)↑": f"{judge.get('mean_overall', 0):.2f}",
+                "Overall↑": f"{m.get('overall_score', 0):.3f}",
+                "AvgDepth↑": f"{m.get('structural', {}).get('avg_depth', 0):.2f}",
+                "Tangles↓": f"{m.get('structural', {}).get('tangledness', 0):.2%}",
+                "GO↓": f"{m.get('go', 0):.2%}",
+                "FQ": m.get("n_fq_rules", 0),
+                "DK": m.get("n_dk_rules", 0),
             })
         df = pd.DataFrame(rows).set_index("Variant") if rows else pd.DataFrame()
         return df

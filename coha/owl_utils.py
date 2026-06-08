@@ -81,6 +81,100 @@ def extract_structural_metrics(ontology_ttl: str) -> dict:
     }
 
 
+def extract_deep_structural_metrics(ontology_ttl: str) -> dict:
+    """
+    owlready2-based deep structural metrics.
+
+    Computes:
+      avg_depth, max_depth  — hierarchy depth statistics
+      tangledness           — fraction of classes with >1 parent (multiple inheritance)
+      richness              — properties per class ratio
+      leaf_ratio            — fraction of classes with no subclasses (leaf nodes)
+      num_individuals       — declared owl:NamedIndividual count
+    """
+    try:
+        import owlready2
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".ttl", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(ontology_ttl)
+            tmp = f.name
+
+        try:
+            onto = owlready2.get_ontology(f"file://{tmp}").load()
+            classes = list(onto.classes())
+            props = list(onto.properties())
+            individuals = list(onto.individuals())
+
+            if not classes:
+                return _empty_deep_metrics()
+
+            # Build parent map (only named superclasses)
+            def named_parents(cls):
+                return [
+                    p for p in cls.is_a
+                    if isinstance(p, owlready2.ThingClass) and p is not owlready2.Thing
+                ]
+
+            # Depth via BFS from roots
+            def get_depth(cls, cache={}):
+                if cls in cache:
+                    return cache[cls]
+                parents = named_parents(cls)
+                if not parents:
+                    cache[cls] = 0
+                    return 0
+                d = 1 + max(get_depth(p, cache) for p in parents)
+                cache[cls] = d
+                return d
+
+            depth_cache = {}
+            depths = [get_depth(c, depth_cache) for c in classes]
+
+            # Tangledness: >1 named parent
+            tangled = sum(1 for c in classes if len(named_parents(c)) > 1)
+
+            # Children map for leaf detection
+            has_children = set()
+            for c in classes:
+                for p in named_parents(c):
+                    has_children.add(p)
+            leaf_count = sum(1 for c in classes if c not in has_children)
+
+            return {
+                "avg_depth": round(sum(depths) / len(depths), 3),
+                "max_depth": max(depths),
+                "tangledness": round(tangled / len(classes), 4),
+                "richness": round(len(props) / len(classes), 4),
+                "leaf_ratio": round(leaf_count / len(classes), 4),
+                "num_individuals": len(individuals),
+            }
+
+        finally:
+            os.unlink(tmp)
+
+    except ImportError:
+        logger.warning("owlready2 not available; skipping deep structural metrics.")
+        return _empty_deep_metrics()
+    except Exception as e:
+        logger.warning(f"Deep structural metrics failed: {e}")
+        return _empty_deep_metrics()
+
+
+def _empty_deep_metrics() -> dict:
+    return {
+        "avg_depth": 0.0,
+        "max_depth": 0,
+        "tangledness": 0.0,
+        "richness": 0.0,
+        "leaf_ratio": 0.0,
+        "num_individuals": 0,
+    }
+
+
 def extract_class_names(ontology_ttl: str) -> list:
     """Extract declared class local names from Turtle."""
     names = []
