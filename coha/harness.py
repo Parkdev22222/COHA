@@ -133,6 +133,27 @@ class COHAHarness:
                 logger.warning(f"Skipping CQ {i+1}: no delta generated.")
                 continue
 
+            # Skip merge if gate rejected on all attempts
+            if gate_result is not None and not succeeded:
+                logger.warning(f"CQ {i+1}: gate rejected after {self.config.max_retries} attempts, discarding delta.")
+                rar_data.append((i + 1, 0))
+                qic_data.append((i + 1, cq_text, 0))
+                # Still update rule sets from gate extraction
+                new_fq = list(dict.fromkeys(handoff.formal_quality_rules + gate_result.new_fq_rules))
+                new_dk = list(dict.fromkeys(handoff.domain_knowledge_rules + gate_result.new_dk_rules))
+                handoff = HandoffArtifact(
+                    iteration=i + 1,
+                    completed_cqs=handoff.completed_cqs + [cq_text],
+                    accumulated_ontology=handoff.accumulated_ontology,
+                    formal_quality_rules=new_fq,
+                    domain_knowledge_rules=new_dk,
+                    next_cq=cqs[i + 1] if i + 1 < len(cqs) else "",
+                    coverage_gaps=[],
+                )
+                if isinstance(handoff.next_cq, dict):
+                    handoff.next_cq = handoff.next_cq.get("question", "")
+                continue
+
             # Merge into accumulated ontology
             if self.config.context_reset:
                 new_ttl = merge_ontologies(handoff.accumulated_ontology.ttl, delta_oi)
