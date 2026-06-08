@@ -2,12 +2,13 @@
 COHA Harness: main orchestration loop for ontology generation with Self-Improving Phase Gate.
 
 Supports all experimental conditions:
-  - COHA-full    : context_reset=T, fq=T, dk=T
-  - COHA-no-reset: context_reset=F, fq=T, dk=T
-  - COHA-no-DK   : context_reset=T, fq=T, dk=F
-  - COHA-no-FQ   : context_reset=T, fq=F, dk=T
-  - COHA-static  : context_reset=T, fixed FQ rules, no accumulation
-  - Vanilla      : context_reset=F, no gate at all
+  - COHA-full       : context_reset=T, fq=T, dk=T
+  - COHA-no-reset   : context_reset=F, fq=T, dk=T
+  - COHA-no-DK      : context_reset=T, fq=T, dk=F
+  - COHA-no-FQ      : context_reset=T, fq=F, dk=T
+  - COHA-static     : context_reset=T, fixed FQ rules, no accumulation
+  - Vanilla         : context_reset=F, no gate at all
+  - COHA+Ontogenia  : context_reset=T, fq=T, dk=T, metacognitive generation + ODP injection
 """
 import time
 import logging
@@ -33,6 +34,7 @@ class HarnessConfig:
     gate_config: GateConfig = field(default_factory=GateConfig.coha_full)
     max_retries: int = 3
     name: str = "COHA-full"
+    use_metacognition: bool = False  # Ontogenia-style 2-phase generation with ODP injection
 
     @classmethod
     def coha_full(cls):
@@ -53,6 +55,16 @@ class HarnessConfig:
     @classmethod
     def coha_static_gate(cls):
         return cls(context_reset=True, gate_config=GateConfig.static_gate(), name="COHA-static-gate")
+
+    @classmethod
+    def coha_ontogenia(cls):
+        """COHA+Ontogenia: full COHA gate + metacognitive generation with ODP injection."""
+        return cls(
+            context_reset=True,
+            gate_config=GateConfig.coha_full(),
+            name="COHA+Ontogenia",
+            use_metacognition=True,
+        )
 
     @classmethod
     def vanilla(cls):
@@ -101,7 +113,12 @@ class COHAHarness:
 
                 # Generate delta-Oi
                 if self.config.context_reset:
-                    delta_oi = self.generator.generate_with_reset(cq_text, user_story, handoff)
+                    if self.config.use_metacognition:
+                        delta_oi = self.generator.generate_with_metacognition_reset(
+                            cq_text, user_story, handoff
+                        )
+                    else:
+                        delta_oi = self.generator.generate_with_reset(cq_text, user_story, handoff)
                 else:
                     delta_oi = self.generator.generate_full_context(
                         cq_text, user_story, accumulated_ttl

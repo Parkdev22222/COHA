@@ -50,6 +50,8 @@ def run_main_experiment(save_results: bool = True) -> dict:
         ("COHA-no-FQ",         lambda: COHAHarness(client, HarnessConfig.coha_no_fq()).run(ALL_CQS, USER_STORY)),
         ("COHA-no-DK",         lambda: COHAHarness(client, HarnessConfig.coha_no_dk()).run(ALL_CQS, USER_STORY)),
         ("COHA-full",          lambda: COHAHarness(client, HarnessConfig.coha_full()).run(ALL_CQS, USER_STORY)),
+        # COHA+Ontogenia: COHA self-improving gate + metacognitive generation + ODP injection
+        ("COHA+Ontogenia",     lambda: COHAHarness(client, HarnessConfig.coha_ontogenia()).run(ALL_CQS, USER_STORY)),
     ]
 
     all_results = {}
