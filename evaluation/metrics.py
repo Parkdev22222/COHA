@@ -24,23 +24,47 @@ logger = logging.getLogger(__name__)
 
 
 def compute_ccr(cqs: list, ontology_ttl: str, llm_client) -> float:
-    """CQ Coverage Rate: fraction of CQs answerable from ontology."""
+    """
+    CQ Coverage Rate: fraction of CQs answerable by the generated ontology.
+
+    Judge checks for SPECIFIC axioms (not just vocabulary presence):
+    - The required class must be declared as owl:Class
+    - The required property must exist with domain/range
+    - A subClassOf or restriction linking the concepts must be present
+
+    Uses chunked ontology view (up to 6000 chars) to avoid truncation bias
+    that favors WholeOntology Prompting (which front-loads all classes).
+    """
     if not cqs or not ontology_ttl.strip():
         return 0.0
-    onto_snippet = ontology_ttl[:3000]
+
+    # Use more of the ontology (6000 chars), not just the front
+    onto_len = len(ontology_ttl)
+    if onto_len <= 6000:
+        onto_snippet = ontology_ttl
+    else:
+        # Take beginning + middle sample to avoid front-loading bias
+        onto_snippet = ontology_ttl[:3000] + "\n...\n" + ontology_ttl[onto_len//2: onto_len//2 + 3000]
+
     covered = 0
     for cq in cqs:
         q_text = cq["question"] if isinstance(cq, dict) else cq
         prompt = (
-            "Does the OWL ontology below contain sufficient classes, properties, "
-            "and axioms to answer this Competency Question?\n\n"
-            f"ONTOLOGY (partial):\n```turtle\n{onto_snippet}\n```\n\n"
+            "You are a strict OWL ontology evaluator.\n\n"
+            "Evaluate whether the ontology below contains the SPECIFIC OWL axioms "
+            "needed to formally answer the Competency Question.\n\n"
+            "Answer YES only if ALL of the following are present:\n"
+            "1. The key concepts are declared as owl:Class (not just mentioned in comments)\n"
+            "2. The required relationships exist as owl:ObjectProperty or owl:DatatypeProperty\n"
+            "3. There is at least one axiom (subClassOf, domain, range, or restriction) "
+            "linking the concepts relevant to the CQ\n\n"
+            "Answer NO if the ontology only mentions vocabulary without proper OWL axioms.\n\n"
+            f"ONTOLOGY:\n```turtle\n{onto_snippet}\n```\n\n"
             f"CQ: {q_text}\n\n"
-            "Answer YES if the ontology covers this CQ, NO if axioms are missing.\n"
-            "First line: YES or NO."
+            "First line must be YES or NO. Then one sentence explaining why."
         )
         try:
-            resp = llm_client.generate(system="", user=prompt, max_tokens=64)
+            resp = llm_client.generate(system="", user=prompt, max_tokens=128)
             if resp.strip().upper().startswith("YES"):
                 covered += 1
         except Exception as e:
