@@ -9,26 +9,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-EVAL_MODEL = "claude-3-5-haiku-20241022"  # fast + capable judge; override via COHA_EVAL_MODEL
-
-
-def _get_eval_client(fallback_client):
-    """Return a Claude client for evaluation, or fall back to generation client."""
-    import os
-    from llm_client import get_client
-    eval_model = os.environ.get("COHA_EVAL_MODEL", EVAL_MODEL)
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
-        print(f"[Evaluator] Using Claude ({eval_model}) as independent judge.")
-        return get_client(eval_model)
-    else:
-        print(
-            "[Evaluator] WARNING: ANTHROPIC_API_KEY not set. "
-            "Using generation model as judge (self-evaluation bias).\n"
-            "  Set ANTHROPIC_API_KEY=sk-... for unbiased evaluation."
-        )
-        return fallback_client
-
 
 def run_main_experiment(save_results: bool = True) -> dict:
     """Run main comparison experiment."""
@@ -50,13 +30,8 @@ def run_main_experiment(save_results: bool = True) -> dict:
     print("COHA Main Experiment: All Variants vs Baselines")
     print("=" * 60 + "\n")
 
-    # Generation client: config.MODEL_NAME (default: EXAONE)
     client = get_client()
-
-    # Evaluation client: Claude (independent judge for unbiased CCR/DES)
-    # Falls back to generation client if ANTHROPIC_API_KEY is not set.
-    eval_client = _get_eval_client(client)
-    evaluator = COHAEvaluator(eval_client, ALL_CQS, GOLD_STANDARD_TTL)
+    evaluator = COHAEvaluator(client, ALL_CQS, GOLD_STANDARD_TTL)
 
     # All 10 automated baselines + 6 COHA ablation conditions (paper §4.3, §4.5)
     # B11 (Human Expert) is not automated — evaluated offline against Gold Standard
