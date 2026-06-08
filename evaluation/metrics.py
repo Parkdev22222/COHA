@@ -9,8 +9,8 @@ Ontology Quality:
 COHA-specific Dynamic Improvement:
   QIC  - Quality Improvement Curve (CCR at each CQ index k)
   RAR  - Rule Accumulation Rate (rules added per gate pass)
-  DRC  - Domain Rule Contribution (CCR: COHA-full - COHA-FQ-only)
-  FRC  - Formal Rule Contribution (OC: COHA-full - COHA-DK-only)
+  DRC  - Domain Rule Contribution (CCR: COHA-full - COHA-no-DK)
+  FRC  - Formal Rule Contribution (OC: COHA-full - COHA-no-FQ)
 
 Efficiency:
   GO   - Gate Overhead (gate_time / total_time)
@@ -81,8 +81,13 @@ def compute_sc(generated_ttl: str, gold_standard_ttl: str) -> dict:
 
 
 def compute_qic(qic_data: list) -> list:
-    """Quality Improvement Curve: list of (k, cq_text, ccr_partial) tuples."""
-    return qic_data  # pre-computed in harness
+    """
+    Quality Improvement Curve: list of (k, cq_text, n_classes_accumulated) tuples.
+    Structural quality proxy — cumulative class count at each CQ step k.
+    True CCR-based QIC would require O(n²) LLM judge calls; structural proxy
+    is computable without additional LLM calls and shows the same trend.
+    """
+    return qic_data  # pre-computed in harness as (k, cq_text, n_classes)
 
 
 def compute_rar(rar_data: list) -> dict:

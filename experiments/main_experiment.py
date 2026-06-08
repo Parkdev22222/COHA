@@ -27,10 +27,11 @@ def run_main_experiment(save_results: bool = True) -> dict:
     client = get_client()
     evaluator = COHAEvaluator(client, ALL_CQS, GOLD_STANDARD_TTL)
 
-    # Define all variants to evaluate
+    # Define all variants to evaluate (all 6 ablation conditions per paper §4.5)
     variants = [
         ("Vanilla-CQbyCQ",     lambda: VanillaCQbyCQ(client).run(ALL_CQS, USER_STORY)),
         ("CQbyCQ-Static-Gate", lambda: StaticGateCQbyCQ(client).run(ALL_CQS, USER_STORY)),
+        ("COHA-no-reset",      lambda: COHAHarness(client, HarnessConfig.coha_no_reset()).run(ALL_CQS, USER_STORY)),
         ("COHA-no-FQ",         lambda: COHAHarness(client, HarnessConfig.coha_no_fq()).run(ALL_CQS, USER_STORY)),
         ("COHA-no-DK",         lambda: COHAHarness(client, HarnessConfig.coha_no_dk()).run(ALL_CQS, USER_STORY)),
         ("COHA-full",          lambda: COHAHarness(client, HarnessConfig.coha_full()).run(ALL_CQS, USER_STORY)),

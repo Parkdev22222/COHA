@@ -137,7 +137,9 @@ class COHAHarness:
             if gate_result is not None and not succeeded:
                 logger.warning(f"CQ {i+1}: gate rejected after {self.config.max_retries} attempts, discarding delta.")
                 rar_data.append((i + 1, 0))
-                qic_data.append((i + 1, cq_text, 0))
+                # QIC: gate rejected — quality stays at current accumulated level
+                current_classes = len(handoff.accumulated_ontology.classes)
+                qic_data.append((i + 1, cq_text, current_classes))
                 # Still update rule sets from gate extraction
                 new_fq = list(dict.fromkeys(handoff.formal_quality_rules + gate_result.new_fq_rules))
                 new_dk = list(dict.fromkeys(handoff.domain_knowledge_rules + gate_result.new_dk_rules))
@@ -179,8 +181,8 @@ class COHAHarness:
             n_rules_after = len(new_fq) + len(new_dk)
             rar_data.append((i + 1, n_rules_after - n_rules_before))
 
-            # QIC: placeholder CCR (computed properly in evaluator)
-            qic_data.append((i + 1, cq_text, len(classes) / max(i + 1, 1)))
+            # QIC: cumulative class count at step k (structural quality proxy)
+            qic_data.append((i + 1, cq_text, len(classes)))
 
             # Update handoff
             next_cq = cqs[i + 1] if i + 1 < len(cqs) else ""
