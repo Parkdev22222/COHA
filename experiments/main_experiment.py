@@ -15,9 +15,12 @@ def run_main_experiment(save_results: bool = True) -> dict:
     from config import RESULTS_DIR, CACHE_DIR
     from llm_client import get_client
     from domain.military_cq_benchmark import ALL_CQS, GOLD_STANDARD_TTL, USER_STORY
+    from domain.military_docs import DOMAIN_DOCS
     from coha.harness import COHAHarness, HarnessConfig
     from baselines.vanilla_cqbycq import VanillaCQbyCQ
     from baselines.static_gate_cqbycq import StaticGateCQbyCQ
+    from baselines.ontogpt_agent import OntoGPTAgent
+    from baselines.spires_agent import SPIRESAgent
     from evaluation.evaluator import COHAEvaluator
 
     print("\n" + "=" * 60)
@@ -27,8 +30,10 @@ def run_main_experiment(save_results: bool = True) -> dict:
     client = get_client()
     evaluator = COHAEvaluator(client, ALL_CQS, GOLD_STANDARD_TTL)
 
-    # Define all variants to evaluate (all 6 ablation conditions per paper §4.5)
+    # Define all variants to evaluate (all 6 ablation conditions + external baselines)
     variants = [
+        ("OntoGPT",            lambda: OntoGPTAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
+        ("SPIRES",             lambda: SPIRESAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
         ("Vanilla-CQbyCQ",     lambda: VanillaCQbyCQ(client).run(ALL_CQS, USER_STORY)),
         ("CQbyCQ-Static-Gate", lambda: StaticGateCQbyCQ(client).run(ALL_CQS, USER_STORY)),
         ("COHA-no-reset",      lambda: COHAHarness(client, HarnessConfig.coha_no_reset()).run(ALL_CQS, USER_STORY)),
