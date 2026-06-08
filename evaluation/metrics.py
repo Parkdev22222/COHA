@@ -128,3 +128,43 @@ def compute_ce(total_times_coha: list, total_times_vanilla: list) -> float:
     if not total_times_coha or not total_times_vanilla:
         return 1.0
     return float(np.sum(total_times_vanilla) / max(np.sum(total_times_coha), 1))
+
+
+def compute_des_scaffold(ontology_ttl: str, cqs: list) -> dict:
+    """
+    Domain Expert Score (DES) scaffold.
+
+    DES requires human expert evaluation (1-5 scale on accuracy,
+    completeness, usability). This function returns the evaluation
+    template and auto-computable proxies.
+
+    Full DES requires domain expert (active/reserve military officer)
+    to fill in the template manually.
+
+    Returns:
+        dict with auto_proxy scores and an empty expert_scores template.
+    """
+    from coha.owl_utils import extract_structural_metrics
+
+    struct = extract_structural_metrics(ontology_ttl)
+    n_cqs = len(cqs)
+
+    # Auto-proxy: structural richness as a rough proxy for completeness
+    n_classes = struct.get("n_classes", 0)
+    n_props = struct.get("n_object_properties", 0) + struct.get("n_datatype_properties", 0)
+    proxy_completeness = min(1.0, (n_classes + n_props) / max(n_cqs, 1))
+
+    return {
+        "des_auto_proxy": round(proxy_completeness * 5, 2),  # scaled to 1-5
+        "expert_scores": {
+            "accuracy": None,      # Expert fill: 1-5
+            "completeness": None,  # Expert fill: 1-5
+            "usability": None,     # Expert fill: 1-5
+            "des_mean": None,      # Mean of above three
+        },
+        "evaluation_notes": (
+            "DES requires human expert evaluation. "
+            "Provide the generated .ttl file to a domain expert "
+            "(active/reserve military officer) for manual scoring."
+        ),
+    }

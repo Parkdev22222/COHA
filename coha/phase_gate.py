@@ -215,3 +215,55 @@ class SelfImprovingPhaseGate:
         except Exception as e:
             logger.warning(f"DK rule extraction error: {e}")
         return []
+
+    def resolve_dk_conflicts(
+        self, existing_rules: List[str], new_rules: List[str]
+    ) -> List[str]:
+        """
+        Priority resolution for conflicting DK Rules (paper §3.2.2 Step 2).
+
+        When new rules contradict existing ones (e.g., different cardinality
+        constraints for the same concept), the LLM adjudicates which rule
+        takes precedence. Non-conflicting rules are always accepted.
+
+        Returns the merged rule set with conflicts resolved.
+        """
+        if not existing_rules or not new_rules:
+            return list(dict.fromkeys(existing_rules + new_rules))
+
+        # Quick check: if no obvious keyword overlap, no conflict possible
+        new_keywords = set(
+            w.lower() for r in new_rules for w in r.split()
+            if len(w) > 4
+        )
+        existing_keywords = set(
+            w.lower() for r in existing_rules for w in r.split()
+            if len(w) > 4
+        )
+        if not (new_keywords & existing_keywords):
+            return list(dict.fromkeys(existing_rules + new_rules))
+
+        existing_text = "\n".join(f"- {r}" for r in existing_rules[-15:])
+        new_text = "\n".join(f"- {r}" for r in new_rules)
+        prompt = (
+            "You are resolving conflicts between domain knowledge rules for military ontology.\n\n"
+            f"EXISTING RULES:\n{existing_text}\n\n"
+            f"NEW RULES (to integrate):\n{new_text}\n\n"
+            "For each new rule:\n"
+            "- If it CONTRADICTS an existing rule, keep only the more specific/correct one\n"
+            "- If it DUPLICATES an existing rule, discard it\n"
+            "- If it is COMPATIBLE, accept it\n\n"
+            "Return the final merged rule list, one rule per line. "
+            "Include all accepted existing rules + accepted new rules."
+        )
+        try:
+            resp = self.llm_client.generate(system="", user=prompt, max_tokens=512)
+            merged = [
+                l.strip("- ").strip()
+                for l in resp.strip().split("\n")
+                if l.strip() and len(l.strip()) > 10
+            ]
+            return list(dict.fromkeys(merged)) if merged else list(dict.fromkeys(existing_rules + new_rules))
+        except Exception as e:
+            logger.warning(f"DK conflict resolution failed: {e}; falling back to union.")
+            return list(dict.fromkeys(existing_rules + new_rules))

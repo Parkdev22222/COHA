@@ -20,7 +20,7 @@ class COHAEvaluator:
         """Evaluate a single harness run result."""
         from evaluation.metrics import (
             compute_ccr, compute_oc, compute_sc,
-            compute_rar, compute_go,
+            compute_rar, compute_go, compute_des_scaffold,
         )
         from coha.owl_utils import extract_structural_metrics
 
@@ -37,6 +37,8 @@ class COHAEvaluator:
         )
         struct = extract_structural_metrics(onto_ttl)
 
+        des = compute_des_scaffold(onto_ttl, self.cqs)
+
         return {
             "variant": variant_name,
             "ccr": round(ccr, 4),
@@ -49,6 +51,7 @@ class COHAEvaluator:
             "n_dk_rules": len(harness_result.get("final_dk_rules", [])),
             "n_retries": harness_result.get("n_retries_total", 0),
             "qic_data": harness_result.get("qic_data", []),
+            "des": des,
         }
 
     def compare_all(self, results: dict) -> pd.DataFrame:

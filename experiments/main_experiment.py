@@ -17,10 +17,13 @@ def run_main_experiment(save_results: bool = True) -> dict:
     from domain.military_cq_benchmark import ALL_CQS, GOLD_STANDARD_TTL, USER_STORY
     from domain.military_docs import DOMAIN_DOCS
     from coha.harness import COHAHarness, HarnessConfig
+    from baselines.whole_ontology_prompting import WholeOntologyPrompting
     from baselines.vanilla_cqbycq import VanillaCQbyCQ
-    from baselines.static_gate_cqbycq import StaticGateCQbyCQ
+    from baselines.memoryless_cqbycq import MemorylessCQbyCQ
+    from baselines.ontogenia_agent import OntoGeniaAgent
     from baselines.ontogpt_agent import OntoGPTAgent
     from baselines.spires_agent import SPIRESAgent
+    from baselines.static_gate_cqbycq import StaticGateCQbyCQ
     from evaluation.evaluator import COHAEvaluator
 
     print("\n" + "=" * 60)
@@ -30,12 +33,19 @@ def run_main_experiment(save_results: bool = True) -> dict:
     client = get_client()
     evaluator = COHAEvaluator(client, ALL_CQS, GOLD_STANDARD_TTL)
 
-    # Define all variants to evaluate (all 6 ablation conditions + external baselines)
+    # All 10 automated baselines + 6 COHA ablation conditions (paper §4.3, §4.5)
+    # B11 (Human Expert) is not automated — evaluated offline against Gold Standard
     variants = [
-        ("OntoGPT",            lambda: OntoGPTAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
-        ("SPIRES",             lambda: SPIRESAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
-        ("Vanilla-CQbyCQ",     lambda: VanillaCQbyCQ(client).run(ALL_CQS, USER_STORY)),
-        ("CQbyCQ-Static-Gate", lambda: StaticGateCQbyCQ(client).run(ALL_CQS, USER_STORY)),
+        # External baselines (document-driven)
+        ("B1-WholeOntology",   lambda: WholeOntologyPrompting(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
+        ("B3-Memoryless",      lambda: MemorylessCQbyCQ(client).run(ALL_CQS, USER_STORY)),
+        ("B4-Ontogenia",       lambda: OntoGeniaAgent(client).run(ALL_CQS, USER_STORY)),
+        ("B5-OntoGPT",         lambda: OntoGPTAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
+        ("B5-SPIRES",          lambda: SPIRESAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)),
+        # CQbyCQ family
+        ("B2-Vanilla-CQbyCQ",  lambda: VanillaCQbyCQ(client).run(ALL_CQS, USER_STORY)),
+        ("B7-Static-Gate",     lambda: StaticGateCQbyCQ(client).run(ALL_CQS, USER_STORY)),
+        # COHA ablation conditions
         ("COHA-no-reset",      lambda: COHAHarness(client, HarnessConfig.coha_no_reset()).run(ALL_CQS, USER_STORY)),
         ("COHA-no-FQ",         lambda: COHAHarness(client, HarnessConfig.coha_no_fq()).run(ALL_CQS, USER_STORY)),
         ("COHA-no-DK",         lambda: COHAHarness(client, HarnessConfig.coha_no_dk()).run(ALL_CQS, USER_STORY)),

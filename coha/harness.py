@@ -167,15 +167,16 @@ class COHAHarness:
             classes = extract_class_names(new_ttl)
             properties = extract_property_names(new_ttl)
 
-            # Update rule sets
+            # Update rule sets (FQ: simple union+dedup; DK: conflict resolution per §3.2.2)
             new_fq = list(handoff.formal_quality_rules)
             new_dk = list(handoff.domain_knowledge_rules)
             if gate_result:
                 new_fq.extend(gate_result.new_fq_rules)
-                new_dk.extend(gate_result.new_dk_rules)
-            # Deduplicate
-            new_fq = list(dict.fromkeys(new_fq))
-            new_dk = list(dict.fromkeys(new_dk))
+                new_fq = list(dict.fromkeys(new_fq))
+                if gate_result.new_dk_rules:
+                    new_dk = self.phase_gate.resolve_dk_conflicts(new_dk, gate_result.new_dk_rules)
+                else:
+                    new_dk = list(dict.fromkeys(new_dk))
 
             # RAR: rules added this iteration
             n_rules_after = len(new_fq) + len(new_dk)
