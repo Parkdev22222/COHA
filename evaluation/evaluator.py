@@ -80,7 +80,7 @@ class COHAEvaluator:
         rows = []
         for name, m in results.items():
             judge = m.get("llm_judge", {})
-        rows.append({
+            rows.append({
                 "Variant": name,
                 "CCR↑": f"{m.get('ccr', 0):.2%}",
                 "SPARQL-CCR↑": f"{m.get('sparql_ccr', 0):.2%}",

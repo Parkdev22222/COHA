@@ -214,8 +214,8 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     Falls back to 0 for queries that fail to parse/execute.
     """
     try:
-        from rdflib import Graph, OWL, RDF, RDFS
-        from rdflib.namespace import Namespace
+        from rdflib import Graph
+        from rdflib.namespace import OWL, RDF, RDFS
     except ImportError:
         logger.warning("rdflib not available; skipping SPARQL CCR.")
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
@@ -233,23 +233,23 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
         logger.warning(f"SPARQL CCR: ontology parse failed: {e}")
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
 
-    MIL = Namespace("http://coha.org/military#")
+    MIL_PREFIX = "http://coha.org/military#"
 
     # Build TBox schema summary for the LLM prompt
     classes = sorted(set(
         str(s).rsplit("#", 1)[-1]
         for s, _, o in g.triples((None, RDF.type, OWL.Class))
-        if str(s).startswith("http://coha.org/military#")
+        if str(s).startswith(MIL_PREFIX)
     ))[:40]
     obj_props = sorted(set(
         str(s).rsplit("#", 1)[-1]
         for s, _, o in g.triples((None, RDF.type, OWL.ObjectProperty))
-        if str(s).startswith("http://coha.org/military#")
+        if str(s).startswith(MIL_PREFIX)
     ))[:30]
     subclass_pairs = [
         (str(s).rsplit("#", 1)[-1], str(o).rsplit("#", 1)[-1])
         for s, _, o in g.triples((None, RDFS.subClassOf, None))
-        if str(s).startswith("http://coha.org/military#")
+        if str(s).startswith(MIL_PREFIX)
         and str(o).startswith("http://coha.org/military#")
     ][:20]
 
