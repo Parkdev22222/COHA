@@ -154,23 +154,35 @@ def compute_ce(total_times_coha: list, total_times_vanilla: list) -> float:
     return float(np.sum(total_times_vanilla) / max(np.sum(total_times_coha), 1))
 
 
+def _clean_turtle_for_rdflib(ttl: str) -> str:
+    """Strip markdown fences from Turtle text before rdflib parsing."""
+    for marker in ["```turtle", "```ttl", "```"]:
+        if marker in ttl:
+            start = ttl.find(marker) + len(marker)
+            nl = ttl.find("\n", start)
+            start = nl + 1 if nl != -1 else start
+            end = ttl.rfind("```")
+            if end > start:
+                return ttl[start:end].strip()
+    return ttl.strip()
+
+
 def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     """
-    SPARQL-based CQ Coverage Rate.
+    SPARQL-based CQ Coverage Rate (TBox queries).
 
     For each CQ:
-      1. LLM generates a SPARQL SELECT query from the CQ
-      2. rdflib executes the query against the ontology graph
-      3. Non-empty result → covered
+      1. LLM generates a SPARQL ASK or SELECT query targeting the TBox
+         (class declarations, subClassOf, domain/range — NOT individuals)
+      2. rdflib executes the query against the parsed ontology graph
+      3. ASK=true or non-empty SELECT → covered
 
-    More robust than LLM-as-judge: execution is deterministic.
+    More objective than LLM-as-judge: execution is deterministic.
     Falls back to 0 for queries that fail to parse/execute.
-
-    Returns:
-        dict with coverage_rate, passed, total, and per-CQ details.
     """
     try:
-        from rdflib import Graph
+        from rdflib import Graph, OWL, RDF, RDFS
+        from rdflib.namespace import Namespace
     except ImportError:
         logger.warning("rdflib not available; skipping SPARQL CCR.")
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
@@ -178,19 +190,43 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     if not cqs or not ontology_ttl.strip():
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
 
-    # Parse ontology once
+    # Pre-process: strip markdown fences before parsing
+    clean_ttl = _clean_turtle_for_rdflib(ontology_ttl)
+
     g = Graph()
     try:
-        g.parse(data=ontology_ttl, format="turtle")
+        g.parse(data=clean_ttl, format="turtle")
     except Exception as e:
         logger.warning(f"SPARQL CCR: ontology parse failed: {e}")
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
 
-    # Collect declared class/property names for the SPARQL generation prompt
-    class_names = [str(s).rsplit("#", 1)[-1].rsplit("/", 1)[-1]
-                   for s, _, _ in g.triples((None, None, None))
-                   if str(s).startswith("http://coha.org/military#")][:30]
-    schema_hint = ", ".join(sorted(set(class_names)))[:500]
+    MIL = Namespace("http://coha.org/military#")
+
+    # Build TBox schema summary for the LLM prompt
+    classes = sorted(set(
+        str(s).rsplit("#", 1)[-1]
+        for s, _, o in g.triples((None, RDF.type, OWL.Class))
+        if str(s).startswith("http://coha.org/military#")
+    ))[:40]
+    obj_props = sorted(set(
+        str(s).rsplit("#", 1)[-1]
+        for s, _, o in g.triples((None, RDF.type, OWL.ObjectProperty))
+        if str(s).startswith("http://coha.org/military#")
+    ))[:30]
+    subclass_pairs = [
+        (str(s).rsplit("#", 1)[-1], str(o).rsplit("#", 1)[-1])
+        for s, _, o in g.triples((None, RDFS.subClassOf, None))
+        if str(s).startswith("http://coha.org/military#")
+        and str(o).startswith("http://coha.org/military#")
+    ][:20]
+
+    schema_hint = ""
+    if classes:
+        schema_hint += f"Classes: {', '.join(classes)}\n"
+    if obj_props:
+        schema_hint += f"ObjectProperties: {', '.join(obj_props)}\n"
+    if subclass_pairs:
+        schema_hint += "SubClassOf: " + ", ".join(f"{s}→{o}" for s, o in subclass_pairs[:10]) + "\n"
 
     results = []
     passed = 0
@@ -198,23 +234,27 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     for cq in cqs:
         q_text = cq["question"] if isinstance(cq, dict) else cq
 
-        # Step 1: LLM generates SPARQL
+        # Step 1: Generate TBox-level SPARQL query
         sparql_prompt = (
-            "Generate a SPARQL SELECT query for the following Competency Question "
-            "over an OWL ontology with prefix :  = <http://coha.org/military#>\n\n"
-            f"Known concepts: {schema_hint}\n\n"
-            f"CQ: {q_text}\n\n"
-            "Requirements:\n"
-            "- Use PREFIX : <http://coha.org/military#>\n"
-            "- SELECT at least one variable\n"
-            "- Use WHERE clause with at least one triple pattern\n"
-            "- Return ONLY the SPARQL query, no explanation\n\n"
+            "You are querying an OWL ontology TBox (schema only — NO individuals exist).\n"
+            "Generate a SPARQL query that checks whether the ontology SCHEMA contains\n"
+            "the classes and properties needed to answer the Competency Question.\n\n"
+            f"ONTOLOGY SCHEMA:\n{schema_hint}\n"
+            f"PREFIX : <http://coha.org/military#>\n\n"
+            f"Competency Question: {q_text}\n\n"
+            "Rules:\n"
+            "1. Use PREFIX : <http://coha.org/military#> and standard prefixes\n"
+            "   (owl: <http://www.w3.org/2002/07/owl#>, "
+            "rdfs: <http://www.w3.org/2000/01/rdf-schema#>)\n"
+            "2. Prefer ASK queries: ASK { :SomeClass a owl:Class }\n"
+            "3. Or SELECT over schema: SELECT ?c WHERE { ?c rdfs:subClassOf :SomeClass }\n"
+            "4. Do NOT query for individuals (none exist)\n"
+            "5. Return ONLY the SPARQL query, no explanation\n\n"
             "SPARQL:"
         )
         sparql_query = ""
         try:
             raw = llm_client.generate(system="", user=sparql_prompt, max_tokens=256)
-            # Extract query from markdown if wrapped
             if "```" in raw:
                 start = raw.find("```") + 3
                 nl = raw.find("\n", start)
@@ -226,16 +266,22 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
         except Exception as e:
             logger.warning(f"SPARQL generation failed for CQ: {e}")
 
-        # Step 2: Execute SPARQL
+        # Step 2: Execute — handle both ASK and SELECT
         status = "error"
         result_count = 0
         if sparql_query:
             try:
                 qres = g.query(sparql_query)
-                rows = list(qres)
-                result_count = len(rows)
-                status = "pass" if result_count > 0 else "fail"
-                if status == "pass":
+                # ASK query returns boolean result
+                if qres.type == "ASK":
+                    passed_this = bool(qres.askAnswer)
+                    result_count = 1 if passed_this else 0
+                else:
+                    rows = list(qres)
+                    result_count = len(rows)
+                    passed_this = result_count > 0
+                status = "pass" if passed_this else "fail"
+                if passed_this:
                     passed += 1
             except Exception as e:
                 status = "error"
