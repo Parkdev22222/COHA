@@ -65,9 +65,9 @@ def run_main_experiment(save_results: bool = True) -> dict:
             metrics = evaluator.evaluate(result, name)
             all_results[name] = metrics
             print(
-                f"  {name}: CCR={metrics['ccr']:.2%}, "
-                f"OC={metrics['oc']}, "
-                f"SC={metrics['sc']['sc']:.2%}"
+                f"  {name}: CCR={metrics.get('ccr', 0):.2%}, "
+                f"OC={metrics.get('oc')}, "
+                f"SC={metrics.get('sc', {}).get('sc', 0):.2%}"
             )
         except Exception as e:
             logger.error(f"{name} failed: {e}", exc_info=True)

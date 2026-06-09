@@ -49,8 +49,8 @@ def run_ablation_study(save_results: bool = True) -> dict:
             metrics = evaluator.evaluate(result, name)
             all_results[name] = metrics
             print(
-                f"  {name}: CCR={metrics['ccr']:.2%}, OC={metrics['oc']}, "
-                f"FQ_rules={metrics['n_fq_rules']}, DK_rules={metrics['n_dk_rules']}"
+                f"  {name}: CCR={metrics.get('ccr', 0):.2%}, OC={metrics.get('oc')}, "
+                f"FQ_rules={metrics.get('n_fq_rules', 'N/A')}, DK_rules={metrics.get('n_dk_rules', 'N/A')}"
             )
         except Exception as e:
             logger.error(f"Ablation {name} failed: {e}", exc_info=True)
