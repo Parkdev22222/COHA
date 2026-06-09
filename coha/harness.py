@@ -97,6 +97,7 @@ class COHAHarness:
 
         for i, cq in enumerate(cqs):
             cq_text = cq["question"] if isinstance(cq, dict) else cq
+            cq_entities = cq.get("key_entities", []) if isinstance(cq, dict) else []
             print(f"  [{self.config.name}] CQ {i+1}/{len(cqs)}: {cq_text[:60]}...")
             n_rules_before = (
                 len(handoff.formal_quality_rules) + len(handoff.domain_knowledge_rules)
@@ -115,13 +116,15 @@ class COHAHarness:
                 if self.config.context_reset:
                     if self.config.use_metacognition:
                         delta_oi = self.generator.generate_with_metacognition_reset(
-                            cq_text, user_story, handoff
+                            cq_text, user_story, handoff, key_entities=cq_entities
                         )
                     else:
-                        delta_oi = self.generator.generate_with_reset(cq_text, user_story, handoff)
+                        delta_oi = self.generator.generate_with_reset(
+                            cq_text, user_story, handoff, key_entities=cq_entities
+                        )
                 else:
                     delta_oi = self.generator.generate_full_context(
-                        cq_text, user_story, accumulated_ttl
+                        cq_text, user_story, accumulated_ttl, key_entities=cq_entities
                     )
 
                 # Apply Phase Gate (if any rules or accumulation is active)

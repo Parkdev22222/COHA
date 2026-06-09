@@ -49,7 +49,22 @@ class AxiomGenerator:
     def __init__(self, llm_client):
         self.llm_client = llm_client
 
-    def generate_with_reset(self, cq: str, user_story: str, handoff: HandoffArtifact) -> str:
+    @staticmethod
+    def _vocab_hint(key_entities: list) -> str:
+        """Build a vocabulary hint string from key_entities for prompt injection."""
+        if not key_entities:
+            return ""
+        lines = "\n".join(f"  :{e}" for e in key_entities)
+        return (
+            "\nREQUIRED VOCABULARY — use these EXACT names for classes/properties:\n"
+            + lines
+            + "\n"
+        )
+
+    def generate_with_reset(
+        self, cq: str, user_story: str, handoff: HandoffArtifact,
+        key_entities: list = None
+    ) -> str:
         """Generate delta-Oi using context reset: inject only the handoff artifact."""
         system_prompt = (
             "You are an expert ontology engineer for the military tactical domain.\n"
@@ -59,8 +74,9 @@ class AxiomGenerator:
         user_prompt = (
             f"User Story: {user_story}\n\n"
             f"Current Ontology Summary:\n{handoff.accumulated_ontology.to_summary()}\n\n"
-            f"Competency Question: {cq}\n\n"
-            "Generate ONLY the NEW OWL axioms in Turtle format (delta-Oi) needed to answer this CQ.\n"
+            f"Competency Question: {cq}\n"
+            + self._vocab_hint(key_entities)
+            + "\nGenerate ONLY the NEW OWL axioms in Turtle format (delta-Oi) needed to answer this CQ.\n"
             "Requirements:\n"
             "1. Use base prefix: @prefix : <http://coha.org/military#>\n"
             "2. Include standard OWL 2 vocabulary (owl:Class, owl:ObjectProperty, rdfs:subClassOf, etc.)\n"
@@ -73,7 +89,8 @@ class AxiomGenerator:
         return self._clean_turtle(response)
 
     def generate_with_metacognition_reset(
-        self, cq: str, user_story: str, handoff: HandoffArtifact
+        self, cq: str, user_story: str, handoff: HandoffArtifact,
+        key_entities: list = None
     ) -> str:
         """Generate delta-Oi using COHA context reset + Ontogenia-style metacognitive prompting.
 
@@ -90,8 +107,9 @@ class AxiomGenerator:
             f"User Story: {user_story}\n\n"
             f"Current Ontology Summary:\n{handoff.accumulated_ontology.to_summary()}\n\n"
             f"{MILITARY_ODPS}\n"
-            f"Competency Question: {cq}\n\n"
-            "Before generating OWL axioms, reflect briefly:\n"
+            f"Competency Question: {cq}\n"
+            + self._vocab_hint(key_entities)
+            + "\nBefore generating OWL axioms, reflect briefly:\n"
             "1. What classes and properties are needed to answer this CQ?\n"
             "2. Which Ontology Design Pattern above best applies?\n"
             "3. What errors or inconsistencies should I avoid?\n"
@@ -113,7 +131,10 @@ class AxiomGenerator:
 
         return self._clean_turtle(turtle_part)
 
-    def generate_full_context(self, cq: str, user_story: str, accumulated_ttl: str) -> str:
+    def generate_full_context(
+        self, cq: str, user_story: str, accumulated_ttl: str,
+        key_entities: list = None
+    ) -> str:
         """Generate delta-Oi with full accumulated ontology in context (Vanilla CQbyCQ)."""
         onto_section = (
             f"\nACCUMULATED ONTOLOGY:\n```turtle\n{accumulated_ttl}\n```\n\n"
@@ -126,8 +147,9 @@ class AxiomGenerator:
             f"You are an ontology engineer for the military tactical domain.\n\n"
             f"User Story: {user_story}"
             f"{onto_section}"
-            f"Competency Question: {cq}\n\n"
-            "Generate ONLY the new OWL axioms in Turtle format to answer this CQ.\n"
+            f"Competency Question: {cq}\n"
+            + self._vocab_hint(key_entities)
+            + "\nGenerate ONLY the new OWL axioms in Turtle format to answer this CQ.\n"
             "Return ONLY valid Turtle syntax.\n\n"
             "Generate:"
         )

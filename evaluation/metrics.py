@@ -78,10 +78,34 @@ def compute_oc(ontology_ttl: str) -> bool:
     return check_consistency(ontology_ttl)
 
 
+def _fuzzy_name_match(gold_name: str, gen_names: set) -> float:
+    """
+    Fuzzy name match score for SC calculation.
+      1.0 — exact match (case-insensitive)
+      0.5 — substring match: one contains the other (min 4 chars each)
+      0.0 — no match
+    """
+    g = gold_name.lower()
+    gen_lower = {n.lower() for n in gen_names}
+    if g in gen_lower:
+        return 1.0
+    if len(g) >= 4:
+        for n in gen_lower:
+            if len(n) >= 4 and (g in n or n in g):
+                return 0.5
+    return 0.0
+
+
 def compute_sc(generated_ttl: str, gold_standard_ttl: str) -> dict:
     """
     Structural Completeness vs Gold Standard.
-    Returns class_coverage, property_coverage, overall_sc.
+
+    Uses fuzzy name matching:
+      - Exact match (case-insensitive): 1.0 point
+      - Substring match (min 4 chars):  0.5 point  e.g. Infantry ↔ InfantryUnit
+      - No match:                        0.0 point
+
+    Reports both fuzzy score (sc) and exact-only score (sc_exact) for comparison.
     """
     from coha.owl_utils import extract_class_names, extract_property_names
     gen_classes = set(extract_class_names(generated_ttl))
@@ -89,14 +113,23 @@ def compute_sc(generated_ttl: str, gold_standard_ttl: str) -> dict:
     gen_props = set(extract_property_names(generated_ttl))
     gold_props = set(extract_property_names(gold_standard_ttl))
 
-    class_coverage = len(gen_classes & gold_classes) / max(len(gold_classes), 1)
-    prop_coverage = len(gen_props & gold_props) / max(len(gold_props), 1)
-    overall_sc = (class_coverage + prop_coverage) / 2
+    def _coverage(gold_set, gen_set):
+        if not gold_set:
+            return 0.0, 0.0
+        fuzzy = sum(_fuzzy_name_match(g, gen_set) for g in gold_set) / len(gold_set)
+        exact = len({g for g in gold_set if g.lower() in {n.lower() for n in gen_set}}) / len(gold_set)
+        return round(fuzzy, 4), round(exact, 4)
+
+    class_fuzzy, class_exact = _coverage(gold_classes, gen_classes)
+    prop_fuzzy, prop_exact = _coverage(gold_props, gen_props)
 
     return {
-        "class_coverage": round(class_coverage, 4),
-        "property_coverage": round(prop_coverage, 4),
-        "sc": round(overall_sc, 4),
+        "class_coverage": class_fuzzy,
+        "class_coverage_exact": class_exact,
+        "property_coverage": prop_fuzzy,
+        "property_coverage_exact": prop_exact,
+        "sc": round((class_fuzzy + prop_fuzzy) / 2, 4),
+        "sc_exact": round((class_exact + prop_exact) / 2, 4),
         "n_classes_generated": len(gen_classes),
         "n_classes_gold": len(gold_classes),
         "n_props_generated": len(gen_props),
