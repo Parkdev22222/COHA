@@ -87,6 +87,10 @@ class COHAHarness:
           gate_times, total_times, n_retries_total,
           final_fq_rules, final_dk_rules
         """
+        # Reset token/call counters so each variant is measured independently
+        if hasattr(self.llm_client, "reset_stats"):
+            self.llm_client.reset_stats()
+
         handoff = HandoffArtifact.initial()
         accumulated_ttl = ""  # only used for vanilla (no-reset)
         qic_data = []   # [(cq_index, cq_text, ccr_so_far)]
@@ -240,4 +244,9 @@ class COHAHarness:
             "final_fq_rules": handoff.formal_quality_rules,
             "final_dk_rules": handoff.domain_knowledge_rules,
             "is_consistent": handoff.accumulated_ontology.consistency == "VALID",
+            "usage_stats": (
+                self.llm_client.get_usage_stats()
+                if hasattr(self.llm_client, "get_usage_stats")
+                else {}
+            ),
         }

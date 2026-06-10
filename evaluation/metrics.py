@@ -180,11 +180,64 @@ def compute_go(gate_times: list, total_times: list) -> float:
     return float(np.mean(overheads))
 
 
-def compute_ce(total_times_coha: list, total_times_vanilla: list) -> float:
-    """Context Efficiency: proxy via total latency ratio (vanilla / coha)."""
-    if not total_times_coha or not total_times_vanilla:
-        return 1.0
-    return float(np.sum(total_times_vanilla) / max(np.sum(total_times_coha), 1))
+def compute_ce(usage_stats_coha: dict, usage_stats_baseline: dict) -> float:
+    """
+    Context Efficiency (Ontogenia-inspired token tracking metric).
+
+    CE = baseline_tokens / coha_tokens
+
+    CE > 1 → COHA uses fewer tokens than the baseline (more efficient).
+    CE < 1 → COHA uses more tokens (e.g. gate overhead exceeds savings).
+
+    Uses exact token counts for the Anthropic backend and character-based
+    estimates (chars ÷ 4) for the HuggingFace backend, as tracked by
+    UnifiedLLMClient.get_usage_stats().
+    """
+    coha_tokens = usage_stats_coha.get("total_tokens", 0)
+    base_tokens = usage_stats_baseline.get("total_tokens", 0)
+    if not coha_tokens:
+        return 0.0
+    return round(base_tokens / coha_tokens, 4)
+
+
+def compute_odp_coverage(ontology_ttl: str) -> dict:
+    """
+    ODP Utilization Rate (Ontogenia-inspired metric).
+
+    Measures what fraction of the 5 military Ontology Design Patterns
+    are reflected in the generated ontology.  Ontogenia tracks ODP
+    incorporation as a proxy for structured ontology design quality;
+    this metric applies the same idea to COHA's military domain ODPs.
+
+    ODP detection uses keyword presence in the Turtle source:
+      ODP-1 AgentRole         — :assignedRole or :Role class
+      ODP-2 EventParticipation— :hasParticipant or :Event class
+      ODP-3 PartOf            — :isPartOf or :hasPart property
+      ODP-4 Classification    — :hasClassification or :Classification
+      ODP-5 Sequence          — :hasNextStep or :precedes property
+
+    Returns coverage_rate (0–1), counts, and a list of covered ODP names.
+    """
+    ODPS = {
+        "ODP-1 AgentRole":          [":assignedRole", ":Role ", ":Role\n", ":Role;"],
+        "ODP-2 EventParticipation": [":hasParticipant", ":Event ", ":Event\n", ":Event;"],
+        "ODP-3 PartOf":             [":isPartOf", ":hasPart"],
+        "ODP-4 Classification":     [":hasClassification", ":Classification"],
+        "ODP-5 Sequence":           [":hasNextStep", ":precedes"],
+    }
+    covered = [
+        name
+        for name, keywords in ODPS.items()
+        if any(kw in ontology_ttl for kw in keywords)
+    ]
+    n_total = len(ODPS)
+    n_covered = len(covered)
+    return {
+        "odp_coverage_rate": round(n_covered / n_total, 4),
+        "n_odps_covered": n_covered,
+        "n_odps_total": n_total,
+        "covered_odps": covered,
+    }
 
 
 def _clean_turtle_for_rdflib(ttl: str) -> str:

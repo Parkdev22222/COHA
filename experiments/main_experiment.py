@@ -98,6 +98,15 @@ def run_main_experiment(save_results: bool = True) -> dict:
     except Exception as e:
         logger.warning(f"Table generation failed: {e}")
 
+    # Print Ontogenia-style token efficiency table
+    try:
+        ce_df = evaluator.compute_ce_table(all_results)
+        if not ce_df.empty:
+            print(f"\n{'=' * 60}\nCONTEXT EFFICIENCY (Ontogenia-style token tracking)\n{'=' * 60}")
+            print(ce_df.to_string())
+    except Exception as e:
+        logger.warning(f"CE table generation failed: {e}")
+
     # Save results
     if save_results:
         os.makedirs(RESULTS_DIR, exist_ok=True)

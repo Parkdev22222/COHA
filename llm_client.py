@@ -59,9 +59,38 @@ class UnifiedLLMClient:
         self._anthropic_client = None
         self._hf_pipe = None
 
+        # Usage statistics (reset per variant run via reset_stats())
+        self._call_count: int = 0
+        self._input_tokens: int = 0   # exact for Anthropic; estimated for HF
+        self._output_tokens: int = 0
+
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Usage statistics (Ontogenia-style token tracking)
+    # ------------------------------------------------------------------
+
+    def reset_stats(self) -> None:
+        """Reset per-run usage counters (call before each variant run)."""
+        self._call_count = 0
+        self._input_tokens = 0
+        self._output_tokens = 0
+
+    def get_usage_stats(self) -> dict:
+        """
+        Return accumulated usage statistics since last reset_stats() call.
+
+        Token counts are exact for the Anthropic backend and character-based
+        estimates (chars ÷ 4) for the HuggingFace backend.
+        """
+        return {
+            "call_count": self._call_count,
+            "input_tokens": self._input_tokens,
+            "output_tokens": self._output_tokens,
+            "total_tokens": self._input_tokens + self._output_tokens,
+        }
 
     def generate(
         self,
@@ -80,6 +109,7 @@ class UnifiedLLMClient:
         Returns:
             Generated text as a plain string.
         """
+        self._call_count += 1
         if self.backend == "anthropic":
             return self._generate_anthropic(system, user, max_tokens)
         else:
@@ -119,6 +149,10 @@ class UnifiedLLMClient:
                     kwargs["system"] = system
 
                 resp = self._anthropic_client.messages.create(**kwargs)
+                # Exact token counts from Anthropic usage object
+                if hasattr(resp, "usage"):
+                    self._input_tokens += getattr(resp.usage, "input_tokens", 0)
+                    self._output_tokens += getattr(resp.usage, "output_tokens", 0)
                 return resp.content[0].text.strip()
 
             except _anthropic.APIError as exc:
@@ -181,9 +215,16 @@ class UnifiedLLMClient:
                 if isinstance(result, list):
                     for msg in reversed(result):
                         if isinstance(msg, dict) and msg.get("role") == "assistant":
-                            return msg.get("content", "").strip()
+                            text = msg.get("content", "").strip()
+                            # Estimate tokens: input prompt chars ÷ 4, output chars ÷ 4
+                            self._input_tokens += (len(system or "") + len(user or "")) // 4
+                            self._output_tokens += len(text) // 4
+                            return text
                     return ""
-                return str(result).strip()
+                text = str(result).strip()
+                self._input_tokens += (len(system or "") + len(user or "")) // 4
+                self._output_tokens += len(text) // 4
+                return text
 
             except Exception as exc:
                 if attempt < max_retries - 1:
