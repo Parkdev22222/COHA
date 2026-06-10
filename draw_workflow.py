@@ -1,307 +1,361 @@
-"""Draw the COHA full workflow diagram."""
+"""Draw the COHA full workflow diagram — paper version with LLM call badges."""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.patches import FancyBboxPatch
-import matplotlib.patheffects as pe
+from matplotlib.patches import FancyBboxPatch, Circle
+from matplotlib.lines import Line2D
 
-fig, ax = plt.subplots(figsize=(16, 22))
+fig, ax = plt.subplots(figsize=(16, 24))
 ax.set_xlim(0, 16)
-ax.set_ylim(0, 22)
+ax.set_ylim(0, 24)
 ax.axis("off")
-fig.patch.set_facecolor("#F8F9FA")
+fig.patch.set_facecolor("#FFFFFF")
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-def box(x, y, w, h, label, color="#FFFFFF", textcolor="#1A1A2E",
-        fontsize=9, bold=False, radius=0.25, border="#555555",
-        sublabel=None):
-    b = FancyBboxPatch((x - w/2, y - h/2), w, h,
-                       boxstyle=f"round,pad=0.05,rounding_size={radius}",
-                       linewidth=1.2, edgecolor=border, facecolor=color, zorder=3)
-    ax.add_patch(b)
+# ── palette ──────────────────────────────────────────────────────────────────
+C_IO       = "#D6EAF8"   # input / output
+C_IO_B     = "#2471A3"
+C_LOOP     = "#1ABC9C"
+C_LOOP_B   = "#0E8A70"
+C_GEN      = "#D5F5E3"   # generation
+C_GEN_B    = "#1E8449"
+C_GATE     = "#EDE7F6"   # phase gate interior
+C_GATE_B   = "#6C3483"
+C_GATE_H   = "#D7BDE2"   # gate header
+C_CTX      = "#FEF9E7"   # context reset zone
+C_CTX_B    = "#E67E22"
+C_HAND     = "#EBF5FB"   # handoff
+C_HAND_B   = "#2471A3"
+C_REJ      = "#FADBD8"   # rejection
+C_REJ_B    = "#C0392B"
+C_LLM      = "#FF6B35"   # LLM badge
+C_LLM_T    = "#FFFFFF"
+C_OUT      = "#F0F3F4"
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+def rbox(x, y, w, h, fc, ec, lw=1.2, radius=0.22, zorder=3):
+    """Draw a rounded rectangle patch and return it."""
+    p = FancyBboxPatch(
+        (x - w/2, y - h/2), w, h,
+        boxstyle=f"round,pad=0.04,rounding_size={radius}",
+        linewidth=lw, edgecolor=ec, facecolor=fc, zorder=zorder,
+    )
+    ax.add_patch(p)
+    return p
+
+def box(x, y, w, h, title, subtitle=None,
+        fc="#FFFFFF", ec="#555", fontsize=9, bold=False, zorder=3):
+    rbox(x, y, w, h, fc, ec, zorder=zorder)
     weight = "bold" if bold else "normal"
-    y_text = y + (0.18 if sublabel else 0)
-    ax.text(x, y_text, label, ha="center", va="center",
-            fontsize=fontsize, color=textcolor, fontweight=weight, zorder=4,
-            wrap=True)
-    if sublabel:
-        ax.text(x, y - 0.28, sublabel, ha="center", va="center",
-                fontsize=7.5, color="#555555", zorder=4, style="italic")
+    ty = y + (0.16 if subtitle else 0)
+    ax.text(x, ty, title, ha="center", va="center",
+            fontsize=fontsize, color="#1A1A2E", fontweight=weight, zorder=zorder+1)
+    if subtitle:
+        ax.text(x, y - 0.22, subtitle, ha="center", va="center",
+                fontsize=7.2, color="#666", style="italic", zorder=zorder+1)
 
-def diamond(x, y, w, h, label, color="#FFF3CD", border="#E67E22"):
+def diamond(x, y, w, h, label, fc="#FFF3CD", ec="#E67E22"):
     dx, dy = w/2, h/2
-    xs = [x,      x+dx,  x,      x-dx,  x]
-    ys = [y+dy,   y,     y-dy,   y,     y+dy]
-    ax.fill(xs, ys, color=color, zorder=3)
-    ax.plot(xs, ys, color=border, linewidth=1.2, zorder=4)
+    xs = [x, x+dx, x,    x-dx, x]
+    ys = [y+dy, y, y-dy, y,    y+dy]
+    ax.fill(xs, ys, color=fc, zorder=3)
+    ax.plot(xs, ys, color=ec, lw=1.3, zorder=4)
     ax.text(x, y, label, ha="center", va="center",
             fontsize=8.5, fontweight="bold", color="#7D3C00", zorder=5)
 
-def arr(x1, y1, x2, y2, label="", color="#444444", lw=1.4,
-        style="-|>", shrink=3):
+def arr(x1, y1, x2, y2, label="", color="#444", lw=1.4,
+        style="-|>", shrinkA=3, shrinkB=3, label_offset=(0.12, 0)):
     ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
                 arrowprops=dict(arrowstyle=style, color=color,
-                                lw=lw, shrinkA=shrink, shrinkB=shrink),
+                                lw=lw, shrinkA=shrinkA, shrinkB=shrinkB),
                 zorder=2)
     if label:
-        mx, my = (x1+x2)/2, (y1+y2)/2
-        ax.text(mx+0.12, my, label, fontsize=7.5, color=color,
-                va="center", zorder=5)
+        mx = (x1+x2)/2 + label_offset[0]
+        my = (y1+y2)/2 + label_offset[1]
+        ax.text(mx, my, label, fontsize=7.8, color=color, va="center",
+                fontweight="bold", zorder=5)
 
-def hline(y, x1, x2, color="#BBBBBB", lw=1, ls="--"):
-    ax.plot([x1, x2], [y, y], color=color, lw=lw, ls=ls, zorder=1)
+def hline(x1, x2, y, color="#444", lw=1.4):
+    ax.plot([x1, x2], [y, y], color=color, lw=lw, zorder=2)
 
-def rect_bg(x, y, w, h, color, label="", alpha=0.18, radius=0.3, border="#999999"):
-    b = FancyBboxPatch((x, y), w, h,
-                       boxstyle=f"round,pad=0.05,rounding_size={radius}",
-                       linewidth=1.0, edgecolor=border,
-                       facecolor=color, alpha=alpha, zorder=1)
-    ax.add_patch(b)
+def vline(x, y1, y2, color="#444", lw=1.4):
+    ax.plot([x, x], [y1, y2], color=color, lw=lw, zorder=2)
+
+def bg_rect(x, y, w, h, fc, ec="#AAA", alpha=0.25, lw=1.0, label="", zorder=0):
+    p = FancyBboxPatch((x, y), w, h,
+                       boxstyle="round,pad=0.04,rounding_size=0.3",
+                       linewidth=lw, edgecolor=ec,
+                       facecolor=fc, alpha=alpha, zorder=zorder)
+    ax.add_patch(p)
     if label:
-        ax.text(x + 0.18, y + h - 0.22, label, fontsize=7.5,
-                color="#333333", fontweight="bold", va="top", zorder=2)
+        ax.text(x + 0.2, y + h - 0.18, label, fontsize=8,
+                color="#333", fontweight="bold", va="top", zorder=zorder+1)
+
+def llm_badge(x, y, number, size=0.38):
+    """Draw an LLM call badge: orange circle with number."""
+    circ = Circle((x, y), size/2, color=C_LLM, zorder=8)
+    ax.add_patch(circ)
+    ax.text(x, y, f"LLM\n{number}", ha="center", va="center",
+            fontsize=6.5, color=C_LLM_T, fontweight="bold", zorder=9,
+            linespacing=1.1)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
 # TITLE
-# ═══════════════════════════════════════════════════════════════════════════
-ax.text(8, 21.5, "COHA Full Workflow", ha="center", va="center",
-        fontsize=16, fontweight="bold", color="#1A1A2E")
-ax.text(8, 21.05, "CQ-Driven Ontology Harness with Self-Improving Phase Gate",
-        ha="center", va="center", fontsize=10, color="#555555")
+# ═══════════════════════════════════════════════════════════════════════════════
+ax.text(8, 23.45, "COHA: CQ-Driven Ontology Harness",
+        ha="center", va="center", fontsize=15, fontweight="bold", color="#1A1A2E")
+ax.text(8, 22.95, "with Self-Improving Phase Gate",
+        ha="center", va="center", fontsize=11, color="#555")
 
-# ═══════════════════════════════════════════════════════════════════════════
-# INPUTS  (y ≈ 20)
-# ═══════════════════════════════════════════════════════════════════════════
-box(4.5, 20.2, 3.8, 0.7, "CQ List  [CQ₁, CQ₂, …, CQₙ]",
-    color="#D6EAF8", border="#2471A3", bold=True, fontsize=9)
-box(11.5, 20.2, 3.8, 0.7, "User Story",
-    color="#D6EAF8", border="#2471A3", bold=True, fontsize=9)
+# ═══════════════════════════════════════════════════════════════════════════════
+# INPUTS
+# ═══════════════════════════════════════════════════════════════════════════════
+box(4.3, 22.15, 4.2, 0.65, "Competency Questions  [CQ₁ … CQₙ]",
+    fc=C_IO, ec=C_IO_B, fontsize=9, bold=True)
+box(11.7, 22.15, 3.8, 0.65, "User Story",
+    fc=C_IO, ec=C_IO_B, fontsize=9, bold=True)
 
-arr(4.5, 19.85, 7.0, 19.35)
-arr(11.5, 19.85, 9.0, 19.35)
+arr(4.3, 21.82, 6.8, 21.35)
+arr(11.7, 21.82, 9.2, 21.35)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# INIT  (y ≈ 19)
-# ═══════════════════════════════════════════════════════════════════════════
-box(8, 19.05, 5.2, 0.65, "Initialize  HandoffArtifact  (empty)",
-    color="#EBF5FB", border="#2471A3", fontsize=9)
+# ═══════════════════════════════════════════════════════════════════════════════
+# INIT HANDOFF
+# ═══════════════════════════════════════════════════════════════════════════════
+box(8, 21.1, 5.4, 0.6, "Initialize  HandoffArtifact  (empty)",
+    fc=C_HAND, ec=C_HAND_B, fontsize=9)
+arr(8, 20.8, 8, 20.35)
 
-arr(8, 18.72, 8, 18.25)
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOOP BACKGROUND  (y: 3.5 → 20.3)
+# ═══════════════════════════════════════════════════════════════════════════════
+bg_rect(0.35, 3.5, 15.3, 16.8, "#E8F8F5", ec="#1ABC9C", alpha=0.18, lw=1.2,
+        label="For each CQ  (i = 1, 2, … , n)", zorder=0)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# LOOP BG  (y 3.3 … 18.2)
-# ═══════════════════════════════════════════════════════════════════════════
-rect_bg(0.4, 3.3, 15.2, 14.85, "#E8F8F5", label="For each CQ  (i = 1 … n)",
-        alpha=0.22, border="#1ABC9C")
+# LOOP HEADER
+box(8, 20.1, 4.4, 0.5, "For each  CQ_i",
+    fc=C_LOOP, ec=C_LOOP_B, bold=True, fontsize=10)
+ax.text(8, 20.1, "For each  CQ_i", ha="center", va="center",
+        fontsize=10, color="white", fontweight="bold", zorder=5)
+# clear duplicate text from box() — redraw text in white
+ax.texts[-2].set_visible(False)
 
-# FOR EACH CQ label
-box(8, 18.0, 4.2, 0.55, "For each  CQ_i",
-    color="#1ABC9C", textcolor="white", border="#117A65",
-    bold=True, fontsize=10)
+arr(8, 19.85, 8, 19.3)
 
-arr(8, 17.72, 8, 17.2)
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTEXT RESET ZONE
+# ═══════════════════════════════════════════════════════════════════════════════
+bg_rect(0.9, 17.55, 14.2, 1.85, "#FEF9E7", ec=C_CTX_B, alpha=0.4, lw=1.2,
+        label="Context Reset  —  fresh LLM context per CQ", zorder=1)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CONTEXT RESET + HANDOFF INJECTION  (y ≈ 16.9)
-# ═══════════════════════════════════════════════════════════════════════════
-rect_bg(1.0, 15.55, 14.0, 1.75, "#FEF9E7", label="Context Reset  (fresh LLM context per CQ)",
-        alpha=0.35, border="#F39C12")
+# Handoff Artifact box
+rbox(5.1, 18.6, 6.0, 1.1, C_CTX, C_CTX_B, zorder=3)
+ax.text(5.1, 18.98, "Handoff Artifact  →  System Prompt",
+        ha="center", va="center", fontsize=8.8, fontweight="bold",
+        color="#784212", zorder=4)
+ax.text(5.1, 18.55, "• Ontology summary  (classes / properties / consistency)",
+        ha="center", va="center", fontsize=7.6, color="#555", zorder=4)
+ax.text(5.1, 18.2, "• FQ Rules  •  DK Rules  •  completed_cqs  •  next_cq",
+        ha="center", va="center", fontsize=7.6, color="#555", zorder=4)
 
-b2 = FancyBboxPatch((5.2 - 5.8/2, 16.65 - 1.1/2), 5.8, 1.1,
-                    boxstyle="round,pad=0.05,rounding_size=0.25",
-                    lw=1.2, edgecolor="#E67E22", facecolor="#FEF9E7", zorder=3)
-ax.add_patch(b2)
-ax.text(5.2, 17.05, "Handoff Artifact  →  System Prompt", ha="center",
-        va="center", fontsize=8.5, fontweight="bold", color="#784212", zorder=4)
-ax.text(5.2, 16.6, "• Ontology summary (classes / properties)\n• FQ Rules  •  DK Rules  •  completed_cqs",
-        ha="center", va="center", fontsize=7.8, color="#555555", zorder=4)
+# User Prompt box
+rbox(11.8, 18.6, 4.1, 1.1, C_CTX, C_CTX_B, zorder=3)
+ax.text(11.8, 18.98, "User Prompt",
+        ha="center", va="center", fontsize=8.8, fontweight="bold",
+        color="#784212", zorder=4)
+ax.text(11.8, 18.55, "• User Story  •  CQ_i  •  key_entities",
+        ha="center", va="center", fontsize=7.6, color="#555", zorder=4)
+ax.text(11.8, 18.2, "• ⚠ violation hints  (on retry)",
+        ha="center", va="center", fontsize=7.6, color="#C0392B", zorder=4)
 
-b3 = FancyBboxPatch((11.5 - 4.5/2, 16.65 - 1.1/2), 4.5, 1.1,
-                    boxstyle="round,pad=0.05,rounding_size=0.25",
-                    lw=1.2, edgecolor="#E67E22", facecolor="#FEF9E7", zorder=3)
-ax.add_patch(b3)
-ax.text(11.5, 17.05, "User Prompt", ha="center",
-        va="center", fontsize=8.5, fontweight="bold", color="#784212", zorder=4)
-ax.text(11.5, 16.6, "• User Story  •  CQ_i text\n• key_entities  •  violation hints (retry)",
-        ha="center", va="center", fontsize=7.8, color="#555555", zorder=4)
+arr(5.1, 18.05, 6.8, 17.45)
+arr(11.8, 18.05, 9.2, 17.45)
 
-arr(5.2, 16.1, 7.2, 15.45)
-arr(11.5, 16.1, 9.3, 15.45)
-
-# ═══════════════════════════════════════════════════════════════════════════
-# AXIOM GENERATOR  (y ≈ 15.1)
-# ═══════════════════════════════════════════════════════════════════════════
-box(8, 15.1, 6.0, 0.75,
+# ═══════════════════════════════════════════════════════════════════════════════
+# AXIOM GENERATOR  — LLM ①
+# ═══════════════════════════════════════════════════════════════════════════════
+box(8, 17.1, 6.4, 0.75,
     "Axiom Generator  →  delta-Oi",
-    color="#D5F5E3", border="#1E8449", bold=True, fontsize=9.5,
-    sublabel="generate_with_reset()  /  generate_with_metacognition_reset()")
+    subtitle="generate_with_reset()  /  generate_with_metacognition_reset()",
+    fc=C_GEN, ec=C_GEN_B, bold=True, fontsize=9.5)
+llm_badge(11.42, 17.38, "①")
 
-arr(8, 14.72, 8, 14.2)
+arr(8, 16.72, 8, 16.2)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PHASE GATE BG  (y 8.1 … 14.15)
-# ═══════════════════════════════════════════════════════════════════════════
-rect_bg(1.0, 8.1, 14.0, 6.05, "#F4ECF7",
-        label="Self-Improving Phase Gate", alpha=0.3, border="#8E44AD")
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE GATE BACKGROUND  (y: 8.2 → 16.15)
+# ═══════════════════════════════════════════════════════════════════════════════
+bg_rect(0.9, 8.2, 14.2, 8.0, "#F4ECF7", ec="#8E44AD", alpha=0.28, lw=1.3,
+        label="Self-Improving Phase Gate", zorder=1)
 
-# Step 1: FQ Validation  (y ≈ 13.7)
-box(6.0, 13.7, 5.8, 0.8,
-    "Step 1 · FQ Validation",
-    color="#E8DAEF", border="#6C3483", bold=True, fontsize=9,
-    sublabel="_validate_formal(delta_oi, FQ_rules)")
+# ── Step 1: FQ Validation  — LLM ②
+box(6.0, 15.75, 6.2, 0.8,
+    "Step 1 · Formal Quality (FQ) Validation",
+    subtitle="_validate_formal(delta_oi, FQ_rules)  →  fq_violations",
+    fc=C_GATE, ec=C_GATE_B, bold=True, fontsize=9)
+llm_badge(9.28, 16.03, "②")
 
-# Step 2: DK Validation  (y ≈ 12.6)
-box(6.0, 12.6, 5.8, 0.8,
-    "Step 2 · DK Validation",
-    color="#E8DAEF", border="#6C3483", bold=True, fontsize=9,
-    sublabel="_validate_domain(delta_oi, DK_rules)")
+arr(6.0, 15.35, 6.0, 14.8)
 
-arr(6.0, 13.3, 6.0, 13.0)
+# ── Step 2: DK Validation  — LLM ④
+box(6.0, 14.45, 6.2, 0.8,
+    "Step 2 · Domain Knowledge (DK) Validation",
+    subtitle="_validate_domain(delta_oi, DK_rules)  →  dk_violations",
+    fc=C_GATE, ec=C_GATE_B, bold=True, fontsize=9)
+llm_badge(9.28, 14.73, "④")
 
-# Step 3: Rule Extraction  (y ≈ 11.2)
-rect_bg(1.2, 10.45, 13.6, 1.55, "#EDE7F6", alpha=0.4, border="#7B1FA2")
-ax.text(1.5, 11.88, "Step 3 · Rule Extraction", fontsize=8,
-        color="#4A235A", fontweight="bold", zorder=2)
+arr(6.0, 14.05, 6.0, 13.55)
 
-box(5.0, 11.1, 5.0, 0.8,
+# ── Step 3: Rule Extraction background
+bg_rect(1.1, 12.15, 13.8, 1.5, "#EDE7F6", ec="#7B1FA2", alpha=0.4, lw=1.0,
+        label="Step 3 · Rule Extraction", zorder=2)
+
+# FQ Extraction  — LLM ③
+box(5.0, 12.9, 5.6, 0.75,
     "Extract new FQ Rules",
-    color="#E8DAEF", border="#6C3483", fontsize=8.5,
-    sublabel="_extract_fq_rules(delta_oi)")
+    subtitle="_extract_fq_rules(delta_oi)",
+    fc=C_GATE, ec=C_GATE_B, fontsize=8.8)
+llm_badge(7.97, 13.16, "③")
 
-box(11.0, 11.1, 5.0, 0.8,
+# DK Extraction  — LLM ⑤
+box(11.0, 12.9, 5.6, 0.75,
     "Extract new DK Rules",
-    color="#E8DAEF", border="#6C3483", fontsize=8.5,
-    sublabel="_extract_dk_rules(delta_oi)")
+    subtitle="_extract_dk_rules(delta_oi)",
+    fc=C_GATE, ec=C_GATE_B, fontsize=8.8)
+llm_badge(13.97, 13.16, "⑤")
 
-arr(6.0, 12.2, 6.0, 11.5)
-arr(6.0, 12.2, 11.0, 11.5)
+arr(4.8, 14.05, 4.8, 13.28)
+arr(7.2, 14.05, 10.5, 13.28)
 
-# DK Conflict Resolution  (y ≈ 9.5)
-box(8, 9.5, 6.4, 0.75,
+# ── DK Conflict Resolution  — LLM ⑥
+box(8, 11.35, 7.0, 0.8,
     "DK Conflict Resolution",
-    color="#D7BDE2", border="#76448A", fontsize=9,
-    sublabel="resolve_dk_conflicts(existing, new)  — LLM adjudicates contradictions")
+    subtitle="resolve_dk_conflicts(existing, new)  —  LLM adjudicates contradictions",
+    fc=C_GATE_H, ec="#76448A", fontsize=9)
+llm_badge(11.72, 11.63, "⑥")
 
-arr(5.0, 10.7, 7.0, 9.88)
-arr(11.0, 10.7, 9.0, 9.88)
+arr(5.0, 12.52, 6.5, 11.75)
+arr(11.0, 12.52, 9.5, 11.75)
 
-arr(8, 9.12, 8, 8.75)
-box(8, 8.48, 6.0, 0.55, "updated  FQ_{k+1}  and  DK_{k+1}  rule sets",
-    color="#D7BDE2", border="#76448A", fontsize=8.5)
+arr(8, 10.95, 8, 10.45)
 
-# Gate decision diamond  (y ≈ 7.2)
-arr(8, 8.2, 8, 7.62)
-diamond(8, 7.1, 3.2, 0.95, "Gate Passed?")
+# ── Updated rule sets
+box(8, 10.15, 7.0, 0.6,
+    "FQ_{k+1} = FQ_k ∪ new_fq     DK_{k+1} = resolve(DK_k, new_dk)",
+    fc=C_GATE_H, ec="#76448A", fontsize=8.5)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PASS path  (right → y 6.1)
-# ═══════════════════════════════════════════════════════════════════════════
-arr(9.6, 7.1, 12.5, 7.1, label="YES", color="#1E8449")
-box(13.2, 7.1, 2.0, 0.65, "Accept\ndelta-Oi", color="#D5F5E3", border="#1E8449",
-    fontsize=8.5, bold=True)
-arr(13.2, 6.77, 13.2, 6.2)
-box(13.2, 5.9, 2.5, 0.55, "Merge into\nOntology TTL",
-    color="#D5F5E3", border="#1E8449", fontsize=8)
+# ── Gate decision
+arr(8, 9.85, 8, 9.35)
+diamond(8, 8.8, 3.4, 1.0, "Gate Passed?")
 
-# ═══════════════════════════════════════════════════════════════════════════
-# FAIL path  (left → retry)
-# ═══════════════════════════════════════════════════════════════════════════
-arr(6.4, 7.1, 3.5, 7.1, label="NO", color="#C0392B")
-box(2.8, 7.1, 2.4, 0.65, "Gate\nRejected", color="#FADBD8", border="#C0392B",
-    fontsize=8.5, bold=True)
+# ═══════════════════════════════════════════════════════════════════════════════
+# PASS PATH  →  right
+# ═══════════════════════════════════════════════════════════════════════════════
+arr(9.7, 8.8, 12.6, 8.8, label=" YES", color=C_GEN_B, label_offset=(0, 0.15))
+box(13.3, 8.8, 2.0, 0.65, "Accept\ndelta-Oi", fc=C_GEN, ec=C_GEN_B, bold=True, fontsize=8.5)
+arr(13.3, 8.47, 13.3, 7.85)
+box(13.3, 7.55, 2.5, 0.6, "Merge into\nOntology TTL", fc=C_GEN, ec=C_GEN_B, fontsize=8)
 
-arr(2.8, 6.77, 2.8, 6.2)
-diamond(2.8, 5.7, 2.8, 0.85, "retry < max?")
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAIL PATH  →  left
+# ═══════════════════════════════════════════════════════════════════════════════
+arr(6.3, 8.8, 3.5, 8.8, label="NO ", color=C_REJ_B, label_offset=(-0.05, 0.15))
+box(2.7, 8.8, 2.2, 0.65, "Gate\nRejected", fc=C_REJ, ec=C_REJ_B, bold=True, fontsize=8.5)
 
-# retry YES
-arr(1.4, 5.7, 1.4, 15.1, label="YES\n(+ violations)", color="#E67E22")
-ax.annotate("", xy=(5.0, 15.1), xytext=(1.4, 15.1),
-            arrowprops=dict(arrowstyle="-|>", color="#E67E22", lw=1.4,
+arr(2.7, 8.47, 2.7, 7.85)
+diamond(2.7, 7.3, 2.9, 0.95, "retry < max?", fc="#FEF9E7", ec=C_CTX_B)
+
+# retry YES  →  back to axiom generator
+arr(1.25, 7.3, 1.25, 17.1, label="", color=C_CTX_B, lw=1.5, shrinkA=0, shrinkB=0)
+hline(1.25, 4.8, 17.1, color=C_CTX_B, lw=1.5)
+ax.annotate("", xy=(4.8, 17.1), xytext=(4.8, 17.1),
+            arrowprops=dict(arrowstyle="-|>", color=C_CTX_B, lw=1.5,
                             shrinkA=0, shrinkB=3), zorder=2)
+ax.text(0.75, 12.0, "YES\n(+violations)", fontsize=7.5, color=C_CTX_B,
+        rotation=90, va="center", ha="center", fontweight="bold", zorder=5)
 
-# retry NO
-arr(2.8, 5.27, 2.8, 4.65, label="NO", color="#C0392B")
-box(2.8, 4.35, 2.8, 0.55, "Discard delta-Oi\n(rules still updated)",
-    color="#FADBD8", border="#C0392B", fontsize=7.8)
+# retry NO  →  discard
+arr(2.7, 6.82, 2.7, 6.25, color=C_REJ_B, label="NO ", label_offset=(-0.55, 0))
+box(2.7, 5.95, 2.8, 0.6, "Discard delta-Oi\n(rules still updated)",
+    fc=C_REJ, ec=C_REJ_B, fontsize=7.8)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# UPDATE HANDOFF  (y ≈ 4.9)  – merge both paths
-# ═══════════════════════════════════════════════════════════════════════════
-arr(13.2, 5.62, 13.2, 4.1)
-ax.plot([13.2, 8.5], [4.1, 4.1], color="#444444", lw=1.4, zorder=2)
-ax.annotate("", xy=(8.5, 4.1), xytext=(8.5, 3.9),
-            arrowprops=dict(arrowstyle="-|>", color="#444444", lw=1.4), zorder=2)
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPDATE HANDOFF  — merge both pass & discard paths
+# ═══════════════════════════════════════════════════════════════════════════════
+# pass path down
+arr(13.3, 7.25, 13.3, 5.1)
+hline(13.3, 9.0, 5.1, color="#444", lw=1.4)
+ax.annotate("", xy=(9.0, 5.1), xytext=(9.0, 4.9),
+            arrowprops=dict(arrowstyle="-|>", color="#444", lw=1.4), zorder=2)
 
-arr(2.8, 4.08, 2.8, 3.95)
-ax.plot([2.8, 7.5], [3.95, 3.95], color="#444444", lw=1.4, zorder=2)
-ax.annotate("", xy=(7.5, 3.95), xytext=(7.5, 3.9),
-            arrowprops=dict(arrowstyle="-|>", color="#444444", lw=1.4), zorder=2)
+# discard path across
+arr(2.7, 5.65, 2.7, 5.1)
+hline(2.7, 7.1, 5.1, color="#444", lw=1.4)
+ax.annotate("", xy=(7.1, 5.1), xytext=(7.1, 4.9),
+            arrowprops=dict(arrowstyle="-|>", color="#444", lw=1.4), zorder=2)
 
-box(8, 3.7, 8.0, 0.65,
+box(8, 4.7, 8.5, 0.7,
     "Update HandoffArtifact  (iteration k+1)",
-    color="#EBF5FB", border="#2471A3", bold=True, fontsize=9,
-    sublabel="classes, properties, consistency, FQ_rules, DK_rules, next_cq, completed_cqs")
+    subtitle="classes · properties · consistency · FQ_rules · DK_rules · next_cq · completed_cqs",
+    fc=C_HAND, ec=C_HAND_B, bold=True, fontsize=9)
 
-# ── back-edge to loop ──────────────────────────────────────────────────────
-arr(8, 3.37, 8, 3.1)
-box(8, 2.85, 3.5, 0.45, "i < n  →  next CQ",
-    color="#1ABC9C", textcolor="white", border="#117A65", fontsize=8.5)
+# ── back-edge to loop
+arr(8, 4.35, 8, 3.95)
+box(8, 3.7, 3.8, 0.45, "i < n  →  next CQ",
+    fc=C_LOOP, ec=C_LOOP_B, fontsize=9)
+ax.text(8, 3.7, "i < n  →  next CQ", ha="center", va="center",
+        fontsize=9, color="white", fontweight="bold", zorder=5)
+ax.texts[-1]   # keep
 
-ax.annotate("", xy=(0.55, 17.95), xytext=(0.55, 2.85),
-            arrowprops=dict(arrowstyle="-|>", color="#117A65", lw=1.5,
-                            connectionstyle="arc3,rad=0"), zorder=2)
-ax.plot([0.55, 5.85], [17.95, 17.95], color="#117A65", lw=1.5, zorder=2)
+# loop back arrow along left edge
+vline(0.55, 3.7, 20.1, color=C_LOOP_B, lw=1.6)
+hline(0.55, 5.65, 20.1, color=C_LOOP_B, lw=1.6)
+ax.annotate("", xy=(5.65, 20.1), xytext=(5.65, 20.1),
+            arrowprops=dict(arrowstyle="-|>", color=C_LOOP_B, lw=1.6,
+                            shrinkA=0, shrinkB=3), zorder=2)
+arr(3.9, 3.7, 0.55, 3.7, color=C_LOOP_B, lw=1.6, shrinkA=3, shrinkB=0)
+ax.text(0.2, 12.0, "next CQ", fontsize=7.5, color=C_LOOP_B,
+        rotation=90, va="center", ha="center", fontweight="bold", zorder=5)
 
-ax.text(0.2, 10.4, "next CQ", fontsize=7.5, color="#117A65",
-        rotation=90, va="center", fontweight="bold")
+# ═══════════════════════════════════════════════════════════════════════════════
+# OUTPUTS
+# ═══════════════════════════════════════════════════════════════════════════════
+arr(8, 3.47, 8, 2.95)
+hline(3.2, 12.8, 2.7, color=C_IO_B, lw=1.3)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# OUTPUT  (y ≈ 1.6)
-# ═══════════════════════════════════════════════════════════════════════════
-arr(8, 2.62, 8, 2.1)
-ax.plot([4.25, 11.75], [1.85, 1.85], color="#2471A3", lw=1.2, zorder=2)
-
-boxes_out = [
-    (3.0, 1.2, 3.5, "Final Ontology TTL\n(merged)", "#D6EAF8", "#2471A3"),
-    (7.0, 1.2, 3.2, "Metrics\n(SC · CCR · ODP · CE)", "#D5F5E3", "#1E8449"),
-    (11.0, 1.2, 3.5, "FQ / DK Rules\n+ Usage Stats", "#E8DAEF", "#6C3483"),
+out_items = [
+    (3.2,  2.1, 3.5, "Final Ontology TTL\n(merged)",        C_IO,  C_IO_B),
+    (8.0,  2.1, 3.5, "Metrics\n(SC · CCR · ODP · CE)",      C_GEN, C_GEN_B),
+    (12.8, 2.1, 3.5, "FQ/DK Rules\n+ Token Usage Stats",    C_GATE, C_GATE_B),
 ]
-for bx, by, bw, bl, bc, bb in boxes_out:
-    ax.plot([bx, bx], [1.85, by + 0.42], color="#444444", lw=1.2, zorder=2)
-    ax.annotate("", xy=(bx, by + 0.42), xytext=(bx, by + 0.42),
-                arrowprops=dict(arrowstyle="-|>", color="#444444", lw=1.2), zorder=2)
-    b = FancyBboxPatch((bx - bw/2, by - 0.42), bw, 0.84,
-                       boxstyle="round,pad=0.05,rounding_size=0.2",
-                       lw=1.2, edgecolor=bb, facecolor=bc, zorder=3)
-    ax.add_patch(b)
-    ax.text(bx, by, bl, ha="center", va="center",
-            fontsize=8, fontweight="bold", color="#1A1A2E", zorder=4)
-
-# arrows from horizontal line to each output box
-for bx, by, bw, bl, bc, bb in boxes_out:
-    ax.annotate("", xy=(bx, by + 0.42), xytext=(bx, 1.85),
-                arrowprops=dict(arrowstyle="-|>", color="#444444", lw=1.2,
+for ox, oy, ow, ol, oc, ob in out_items:
+    vline(ox, 2.7, oy+0.45, color=ob, lw=1.2)
+    ax.annotate("", xy=(ox, oy+0.45), xytext=(ox, oy+0.45),
+                arrowprops=dict(arrowstyle="-|>", color=ob, lw=1.2,
                                 shrinkA=0, shrinkB=2), zorder=2)
+    rbox(ox, oy, ow, 0.88, oc, ob, lw=1.3, zorder=4)
+    ax.text(ox, oy, ol, ha="center", va="center",
+            fontsize=8.2, fontweight="bold", color="#1A1A2E", zorder=5)
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
 # LEGEND
-# ═══════════════════════════════════════════════════════════════════════════
-legend_items = [
-    mpatches.Patch(color="#D6EAF8", label="I/O"),
-    mpatches.Patch(color="#1ABC9C", label="Loop control"),
-    mpatches.Patch(color="#D5F5E3", label="Axiom generation"),
-    mpatches.Patch(color="#E8DAEF", label="Phase Gate"),
-    mpatches.Patch(color="#FEF9E7", label="Context reset"),
-    mpatches.Patch(color="#FADBD8", label="Rejection / retry"),
+# ═══════════════════════════════════════════════════════════════════════════════
+legend_patches = [
+    mpatches.Patch(fc=C_IO,   ec=C_IO_B,   label="Input / Output",      lw=1.2),
+    mpatches.Patch(fc=C_GEN,  ec=C_GEN_B,  label="Axiom Generation",    lw=1.2),
+    mpatches.Patch(fc=C_CTX,  ec=C_CTX_B,  label="Context Reset zone",  lw=1.2),
+    mpatches.Patch(fc=C_GATE, ec=C_GATE_B, label="Phase Gate step",     lw=1.2),
+    mpatches.Patch(fc=C_HAND, ec=C_HAND_B, label="Handoff Artifact",    lw=1.2),
+    mpatches.Patch(fc=C_REJ,  ec=C_REJ_B,  label="Rejection / Retry",   lw=1.2),
+    mpatches.Patch(fc=C_LLM,  ec=C_LLM,    label="LLM call  ①–⑥",      lw=0),
 ]
-ax.legend(handles=legend_items, loc="lower right",
-          fontsize=8, framealpha=0.85, edgecolor="#AAAAAA",
-          bbox_to_anchor=(0.99, 0.002))
+ax.legend(handles=legend_patches, loc="lower right",
+          fontsize=8.2, framealpha=0.92, edgecolor="#CCCCCC",
+          bbox_to_anchor=(0.995, 0.0), ncol=1)
 
 plt.tight_layout(pad=0.3)
-plt.savefig("/home/user/COHA/coha_workflow.png", dpi=150,
-            bbox_inches="tight", facecolor=fig.get_facecolor())
+plt.savefig("/home/user/COHA/coha_workflow.png", dpi=160,
+            bbox_inches="tight", facecolor="white")
 print("Saved coha_workflow.png")
