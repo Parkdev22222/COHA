@@ -61,9 +61,21 @@ class AxiomGenerator:
             + "\n"
         )
 
+    @staticmethod
+    def _violation_hint(violations: list) -> str:
+        """Build a correction section from previous gate violation messages."""
+        if not violations:
+            return ""
+        items = "\n".join(f"  - {v}" for v in violations[:3])
+        return (
+            "\n⚠️  PREVIOUS ATTEMPT REJECTED — fix ALL of the following before regenerating:\n"
+            + items
+            + "\n"
+        )
+
     def generate_with_reset(
         self, cq: str, user_story: str, handoff: HandoffArtifact,
-        key_entities: list = None
+        key_entities: list = None, violations: list = None
     ) -> str:
         """Generate delta-Oi using context reset: inject only the handoff artifact."""
         system_prompt = (
@@ -76,6 +88,7 @@ class AxiomGenerator:
             f"Current Ontology Summary:\n{handoff.accumulated_ontology.to_summary()}\n\n"
             f"Competency Question: {cq}\n"
             + self._vocab_hint(key_entities)
+            + self._violation_hint(violations)
             + "\nGenerate ONLY the NEW OWL axioms in Turtle format (delta-Oi) needed to answer this CQ.\n"
             "Requirements:\n"
             "1. Use base prefix: @prefix : <http://coha.org/military#>\n"
@@ -90,7 +103,7 @@ class AxiomGenerator:
 
     def generate_with_metacognition_reset(
         self, cq: str, user_story: str, handoff: HandoffArtifact,
-        key_entities: list = None
+        key_entities: list = None, violations: list = None
     ) -> str:
         """Generate delta-Oi using COHA context reset + Ontogenia-style metacognitive prompting.
 
@@ -109,6 +122,7 @@ class AxiomGenerator:
             f"{MILITARY_ODPS}\n"
             f"Competency Question: {cq}\n"
             + self._vocab_hint(key_entities)
+            + self._violation_hint(violations)
             + "\nBefore generating OWL axioms, reflect briefly:\n"
             "1. What classes and properties are needed to answer this CQ?\n"
             "2. Which Ontology Design Pattern above best applies?\n"
@@ -133,7 +147,7 @@ class AxiomGenerator:
 
     def generate_full_context(
         self, cq: str, user_story: str, accumulated_ttl: str,
-        key_entities: list = None
+        key_entities: list = None, violations: list = None
     ) -> str:
         """Generate delta-Oi with full accumulated ontology in context (Vanilla CQbyCQ)."""
         onto_section = (
@@ -149,6 +163,7 @@ class AxiomGenerator:
             f"{onto_section}"
             f"Competency Question: {cq}\n"
             + self._vocab_hint(key_entities)
+            + self._violation_hint(violations)
             + "\nGenerate ONLY the new OWL axioms in Turtle format to answer this CQ.\n"
             "Return ONLY valid Turtle syntax.\n\n"
             "Generate:"

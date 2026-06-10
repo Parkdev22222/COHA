@@ -111,24 +111,31 @@ class COHAHarness:
             delta_oi = None
             gate_result = None
             succeeded = False
+            prev_violations = []  # violations from previous attempt, fed back to generator
 
             for attempt in range(self.config.max_retries):
                 if attempt > 0:
                     n_retries_total += 1
 
-                # Generate delta-Oi
+                # Generate delta-Oi, injecting previous gate violations on retry
                 if self.config.context_reset:
                     if self.config.use_metacognition:
                         delta_oi = self.generator.generate_with_metacognition_reset(
-                            cq_text, user_story, handoff, key_entities=cq_entities
+                            cq_text, user_story, handoff,
+                            key_entities=cq_entities,
+                            violations=prev_violations,
                         )
                     else:
                         delta_oi = self.generator.generate_with_reset(
-                            cq_text, user_story, handoff, key_entities=cq_entities
+                            cq_text, user_story, handoff,
+                            key_entities=cq_entities,
+                            violations=prev_violations,
                         )
                 else:
                     delta_oi = self.generator.generate_full_context(
-                        cq_text, user_story, accumulated_ttl, key_entities=cq_entities
+                        cq_text, user_story, accumulated_ttl,
+                        key_entities=cq_entities,
+                        violations=prev_violations,
                     )
 
                 # Apply Phase Gate (if any rules or accumulation is active)
@@ -144,6 +151,8 @@ class COHAHarness:
                     if gate_result.passed or attempt == self.config.max_retries - 1:
                         succeeded = gate_result.passed
                         break
+                    # Pass violations to next generation attempt
+                    prev_violations = gate_result.violations
                     print(f"    Gate failed (attempt {attempt+1}): {gate_result.violations[:2]}")
                 else:
                     gate_result = None
