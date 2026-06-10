@@ -78,6 +78,9 @@ class OntoGPTAgent:
         Returns:
             harness-compatible result dict.
         """
+        if hasattr(self.llm_client, "reset_stats"):
+            self.llm_client.reset_stats()
+
         print(f"  [OntoGPT] Single-pass schema extraction from domain documents...")
         t_start = time.time()
 
@@ -124,6 +127,10 @@ class OntoGPTAgent:
             "rar_data": [],
             "qic_data": [],
             "is_consistent": is_consistent,
+            "usage_stats": (
+                self.llm_client.get_usage_stats()
+                if hasattr(self.llm_client, "get_usage_stats") else {}
+            ),
         }
 
     @staticmethod

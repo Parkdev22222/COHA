@@ -22,6 +22,9 @@ class WholeOntologyPrompting:
         self.llm_client = llm_client
 
     def run(self, cqs: list, user_story: str, domain_docs: str = "") -> dict:
+        if hasattr(self.llm_client, "reset_stats"):
+            self.llm_client.reset_stats()
+
         print(f"  [WholeOntology] Single-prompt generation for {len(cqs)} CQs...")
         t_start = time.time()
 
@@ -66,6 +69,10 @@ class WholeOntologyPrompting:
             "rar_data": [],
             "qic_data": [],
             "is_consistent": is_consistent,
+            "usage_stats": (
+                self.llm_client.get_usage_stats()
+                if hasattr(self.llm_client, "get_usage_stats") else {}
+            ),
         }
 
     @staticmethod

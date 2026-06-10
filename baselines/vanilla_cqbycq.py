@@ -18,6 +18,9 @@ class VanillaCQbyCQ:
         self.generator = AxiomGenerator(llm_client)
 
     def run(self, cqs: list, user_story: str, max_retries: int = 3) -> dict:
+        if hasattr(self.llm_client, "reset_stats"):
+            self.llm_client.reset_stats()
+
         accumulated_ttl = ""
         gate_times = []
         total_times = []
@@ -48,4 +51,8 @@ class VanillaCQbyCQ:
             "final_fq_rules": [],
             "final_dk_rules": [],
             "is_consistent": check_consistency(accumulated_ttl),
+            "usage_stats": (
+                self.llm_client.get_usage_stats()
+                if hasattr(self.llm_client, "get_usage_stats") else {}
+            ),
         }

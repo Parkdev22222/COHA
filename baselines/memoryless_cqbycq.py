@@ -27,6 +27,9 @@ class MemorylessCQbyCQ:
         self.llm_client = llm_client
 
     def run(self, cqs: list, user_story: str, max_retries: int = 3) -> dict:
+        if hasattr(self.llm_client, "reset_stats"):
+            self.llm_client.reset_stats()
+
         total_times = []
         all_deltas = []
 
@@ -63,6 +66,10 @@ class MemorylessCQbyCQ:
             "rar_data": [],
             "qic_data": [],
             "is_consistent": check_consistency(accumulated_ttl),
+            "usage_stats": (
+                self.llm_client.get_usage_stats()
+                if hasattr(self.llm_client, "get_usage_stats") else {}
+            ),
         }
 
     def _generate_isolated(self, cq: str, user_story: str) -> str:

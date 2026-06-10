@@ -54,6 +54,9 @@ class SPIRESAgent:
         Returns:
             harness-compatible result dict.
         """
+        if hasattr(self.llm_client, "reset_stats"):
+            self.llm_client.reset_stats()
+
         total_times = []
         gate_times = []
 
@@ -102,6 +105,10 @@ class SPIRESAgent:
             "rar_data": [],
             "qic_data": [],
             "is_consistent": is_consistent,
+            "usage_stats": (
+                self.llm_client.get_usage_stats()
+                if hasattr(self.llm_client, "get_usage_stats") else {}
+            ),
         }
 
     def _discover_classes(self, doc_snippet: str, cq_sample: str, user_story: str) -> list:
