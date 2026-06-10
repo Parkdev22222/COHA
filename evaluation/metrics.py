@@ -200,18 +200,75 @@ def _clean_turtle_for_rdflib(ttl: str) -> str:
     return ttl.strip()
 
 
+def _inject_sparql_prefixes(sparql: str) -> str:
+    """Prepend any missing standard SPARQL prefix declarations."""
+    needed = [
+        (":", "http://coha.org/military#"),
+        ("owl:", "http://www.w3.org/2002/07/owl#"),
+        ("rdfs:", "http://www.w3.org/2000/01/rdf-schema#"),
+        ("rdf:", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
+    ]
+    header = ""
+    for name, uri in needed:
+        if not re.search(
+            rf"PREFIX\s+{re.escape(name)}\s*<", sparql, re.IGNORECASE
+        ):
+            header += f"PREFIX {name} <{uri}>\n"
+    return header + sparql if header else sparql
+
+
+def _exec_sparql(g, sparql: str) -> bool:
+    """Execute SPARQL query; return True if ASK=true or SELECT non-empty."""
+    qres = g.query(sparql)
+    # Detect query type from the query string — version-safe across rdflib releases.
+    body = re.sub(r"PREFIX\s+\S+\s*<[^>]+>\s*", "", sparql, flags=re.IGNORECASE).strip()
+    if body.upper().startswith("ASK"):
+        return bool(qres)
+    return len(list(qres)) > 0
+
+
+def _sparql_key_entity_fallback(g, cq, MIL_PREFIX: str) -> bool:
+    """
+    Fallback: return True if at least one key_entity from the CQ is declared
+    as owl:Class or owl:ObjectProperty in the ontology graph.
+
+    This is objective (no LLM), deterministic, and catches the case where
+    LLM-generated SPARQL hallucinated class names or generated ABox queries.
+    """
+    from rdflib import URIRef
+    from rdflib.namespace import OWL, RDF
+
+    key_entities = cq.get("key_entities", []) if isinstance(cq, dict) else []
+    if not key_entities:
+        return False
+    for entity in key_entities:
+        ref = URIRef(f"{MIL_PREFIX}{entity}")
+        if any(
+            (ref, RDF.type, t) in g
+            for t in (OWL.Class, OWL.ObjectProperty, OWL.DatatypeProperty)
+        ):
+            return True
+    return False
+
+
 def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     """
     SPARQL-based CQ Coverage Rate (TBox queries).
 
-    For each CQ:
-      1. LLM generates a SPARQL ASK or SELECT query targeting the TBox
-         (class declarations, subClassOf, domain/range — NOT individuals)
-      2. rdflib executes the query against the parsed ontology graph
-      3. ASK=true or non-empty SELECT → covered
+    Pipeline per CQ:
+      1. LLM generates a SPARQL ASK query over the TBox schema
+         (class/property existence — NOT individuals).
+      2. rdflib executes the query; ASK=true → covered.
+      3. If the LLM query fails (error / returns False), fall back to a direct
+         key_entity graph lookup: covered if any key entity from the CQ
+         is declared as owl:Class or owl:ObjectProperty.
 
-    More objective than LLM-as-judge: execution is deterministic.
-    Falls back to 0 for queries that fail to parse/execute.
+    Bugs addressed vs. previous version:
+      - Prefix injection: standard prefixes always prepended before execution.
+      - Query type detection: string-based (version-safe across rdflib releases).
+      - Hallucinated class names / ABox queries: caught by the fallback.
+      - Error logging: WARNING level (was DEBUG — invisible in normal runs).
+      - Schema diagnostics: WARNING if no classes found after graph parse.
     """
     try:
         from rdflib import Graph
@@ -223,9 +280,7 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     if not cqs or not ontology_ttl.strip():
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
 
-    # Pre-process: strip markdown fences before parsing
     clean_ttl = _clean_turtle_for_rdflib(ontology_ttl)
-
     g = Graph()
     try:
         g.parse(data=clean_ttl, format="turtle")
@@ -250,8 +305,14 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
         (str(s).rsplit("#", 1)[-1], str(o).rsplit("#", 1)[-1])
         for s, _, o in g.triples((None, RDFS.subClassOf, None))
         if str(s).startswith(MIL_PREFIX)
-        and str(o).startswith("http://coha.org/military#")
+        and str(o).startswith(MIL_PREFIX)
     ][:20]
+
+    if not classes and not obj_props:
+        logger.warning(
+            f"SPARQL CCR: no classes/properties found in graph "
+            f"(total triples={len(g)}). Will rely on fallback only."
+        )
 
     schema_hint = ""
     if classes:
@@ -259,7 +320,11 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     if obj_props:
         schema_hint += f"ObjectProperties: {', '.join(obj_props)}\n"
     if subclass_pairs:
-        schema_hint += "SubClassOf: " + ", ".join(f"{s}→{o}" for s, o in subclass_pairs[:10]) + "\n"
+        schema_hint += (
+            "SubClassOf: "
+            + ", ".join(f"{s}→{o}" for s, o in subclass_pairs[:10])
+            + "\n"
+        )
 
     results = []
     passed = 0
@@ -267,68 +332,77 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     for cq in cqs:
         q_text = cq["question"] if isinstance(cq, dict) else cq
 
-        # Step 1: Generate TBox-level SPARQL query
-        sparql_prompt = (
-            "You are querying an OWL ontology TBox (schema only — NO individuals exist).\n"
-            "Generate a SPARQL query that checks whether the ontology SCHEMA contains\n"
-            "the classes and properties needed to answer the Competency Question.\n\n"
-            f"ONTOLOGY SCHEMA:\n{schema_hint}\n"
-            f"PREFIX : <http://coha.org/military#>\n\n"
-            f"Competency Question: {q_text}\n\n"
-            "Rules:\n"
-            "1. Use PREFIX : <http://coha.org/military#> and standard prefixes\n"
-            "   (owl: <http://www.w3.org/2002/07/owl#>, "
-            "rdfs: <http://www.w3.org/2000/01/rdf-schema#>)\n"
-            "2. Prefer ASK queries: ASK { :SomeClass a owl:Class }\n"
-            "3. Or SELECT over schema: SELECT ?c WHERE { ?c rdfs:subClassOf :SomeClass }\n"
-            "4. Do NOT query for individuals (none exist)\n"
-            "5. Return ONLY the SPARQL query, no explanation\n\n"
-            "SPARQL:"
-        )
+        # ── Step 1: LLM-generated TBox SPARQL ──────────────────────────────
         sparql_query = ""
-        try:
-            raw = llm_client.generate(system="", user=sparql_prompt, max_tokens=256)
-            if "```" in raw:
-                start = raw.find("```") + 3
-                nl = raw.find("\n", start)
-                start = nl + 1 if nl != -1 else start
-                end = raw.find("```", start)
-                sparql_query = raw[start:end].strip() if end != -1 else raw[start:].strip()
-            else:
-                sparql_query = raw.strip()
-        except Exception as e:
-            logger.warning(f"SPARQL generation failed for CQ: {e}")
-
-        # Step 2: Execute — handle both ASK and SELECT
-        status = "error"
-        result_count = 0
-        if sparql_query:
+        if schema_hint:
+            sparql_prompt = (
+                "You are querying an OWL ontology TBox (schema only — NO instances).\n"
+                "Write ONE SPARQL ASK query that returns TRUE if the ontology contains\n"
+                "the OWL classes and/or properties needed to answer the CQ.\n\n"
+                "SCHEMA (use ONLY these names — do NOT invent others):\n"
+                f"{schema_hint}\n"
+                f"Competency Question: {q_text}\n\n"
+                "RULES:\n"
+                "1. Only test for class/property EXISTENCE in the schema.\n"
+                "2. Use ASK {{ :ClassName a owl:Class }} patterns.\n"
+                "3. Combine with . (AND) if multiple concepts are needed.\n"
+                "4. Do NOT query for individuals or property values.\n\n"
+                "Examples:\n"
+                "  ASK { :Unit a owl:Class }\n"
+                "  ASK { :ThreatLevel a owl:Class . :Unit a owl:Class }\n"
+                "  ASK { :hasRole a owl:ObjectProperty }\n\n"
+                "Return ONLY the ASK query, no explanation:\n"
+            )
             try:
-                qres = g.query(sparql_query)
-                # ASK query returns boolean result
-                if qres.type == "ASK":
-                    passed_this = bool(qres.askAnswer)
-                    result_count = 1 if passed_this else 0
+                raw = llm_client.generate(system="", user=sparql_prompt, max_tokens=128)
+                # Extract from code fence if present
+                if "```" in raw:
+                    s = raw.find("```") + 3
+                    nl = raw.find("\n", s)
+                    s = nl + 1 if nl != -1 else s
+                    e = raw.find("```", s)
+                    sparql_query = raw[s:e].strip() if e != -1 else raw[s:].strip()
                 else:
-                    rows = list(qres)
-                    result_count = len(rows)
-                    passed_this = result_count > 0
-                status = "pass" if passed_this else "fail"
-                if passed_this:
-                    passed += 1
-            except Exception as e:
-                status = "error"
-                logger.debug(f"SPARQL exec failed: {e}")
+                    sparql_query = raw.strip()
+            except Exception as ex:
+                logger.warning(f"SPARQL generation failed for CQ '{q_text[:50]}': {ex}")
 
-        results.append({
-            "cq": q_text,
-            "status": status,
-            "result_count": result_count,
-        })
+        # ── Step 2: Execute with prefix injection ──────────────────────────
+        llm_passed = False
+        status = "no_query"
+        if sparql_query:
+            full_query = _inject_sparql_prefixes(sparql_query)
+            try:
+                llm_passed = _exec_sparql(g, full_query)
+                status = "pass" if llm_passed else "fail"
+            except Exception as ex:
+                status = "error"
+                logger.warning(
+                    f"SPARQL exec error for CQ '{q_text[:50]}': {ex} "
+                    f"| query: {full_query[:120]}"
+                )
+
+        # ── Step 3: Fallback — direct key_entity graph lookup ──────────────
+        fallback_passed = False
+        if not llm_passed:
+            fallback_passed = _sparql_key_entity_fallback(g, cq, MIL_PREFIX)
+            if fallback_passed and status != "pass":
+                status = "fallback"
+
+        covered = llm_passed or fallback_passed
+        if covered:
+            passed += 1
+
+        results.append({"cq": q_text, "status": status})
 
     total = len(cqs)
+    coverage = round(passed / total, 4) if total else 0.0
+    logger.info(
+        f"SPARQL CCR: {passed}/{total} covered ({coverage:.1%}) "
+        f"| graph classes={len(classes)}, props={len(obj_props)}"
+    )
     return {
-        "coverage_rate": round(passed / total, 4) if total else 0.0,
+        "coverage_rate": coverage,
         "passed": passed,
         "total": total,
         "details": results,
