@@ -321,7 +321,12 @@ ISR_CQS: List[Dict] = [
 
 ALL_CQS: List[Dict] = TACTICAL_GROUND_CQS + C2_CQS + ISR_CQS
 
-# == Gold Standard Ontology (manually authored, upper bound) ==================
+# == Gold Standard Ontology (LLM-assisted, reviewed against FM 3-0 / FM 6-0) ==
+# Construction: Claude 3.5 Sonnet generated initial schema covering all 60 CQs;
+# reviewed for structural correctness and domain validity against U.S. Army doctrine.
+# Used as relative upper-bound reference for SC metric only — not absolute ground truth.
+# Generator model (EXAONE-4.0-32B) differs from gold constructor (Claude 3.5 Sonnet)
+# to reduce circular evaluation bias.
 
 GOLD_STANDARD_TTL: str = """
 @prefix : <http://coha.org/military#> .
