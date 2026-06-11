@@ -173,9 +173,10 @@ class COHAHarness:
                 # QIC: gate rejected — quality stays at current accumulated level
                 current_classes = len(handoff.accumulated_ontology.classes)
                 qic_data.append((i + 1, cq_text, current_classes))
-                # Still update rule sets from gate extraction
+                # Only update FQ rules from rejected delta (structural lessons still valid).
+                # Do NOT update DK rules from rejected delta — bad domain axioms corrupt future rules.
                 new_fq = list(dict.fromkeys(handoff.formal_quality_rules + gate_result.new_fq_rules))
-                new_dk = list(dict.fromkeys(handoff.domain_knowledge_rules + gate_result.new_dk_rules))
+                new_dk = list(handoff.domain_knowledge_rules)
                 handoff = HandoffArtifact(
                     iteration=i + 1,
                     completed_cqs=handoff.completed_cqs + [cq_text],

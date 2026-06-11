@@ -110,7 +110,11 @@ class SelfImprovingPhaseGate:
         if self.config.dk_accumulate:
             new_dk_rules = self._extract_dk_rules(delta_oi, active_dk_rules)
 
-        passed = (len(fq_violations) == 0) and (len(dk_violations) == 0)
+        # FQ violations are hard failures (structural correctness).
+        # DK violations are advisory only — logged but do not block acceptance.
+        # Rationale: DK rules are inductively learned and may be noisy early in the sequence;
+        # rejecting valid delta-Oi based on unconfirmed domain rules causes error propagation.
+        passed = (len(fq_violations) == 0)
         latency_ms = (time.time() - t_start) * 1000
 
         return GateResult(

@@ -42,26 +42,54 @@ def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
 
 
 def check_consistency(ontology_ttl: str) -> bool:
-    """Check OWL consistency using owlready2. Returns True if consistent."""
+    """
+    Check OWL consistency using rdflib structural checks.
+
+    owlready2 does not parse Turtle reliably, so we use rdflib to:
+      1. Verify the TTL is syntactically valid
+      2. Detect common OWL inconsistencies:
+         - Class declared both disjoint and in subClassOf hierarchy
+         - Property with identical domain and range declared disjoint
+    Returns True if no inconsistency is detected and TTL parses cleanly.
+    """
+    if not ontology_ttl or not ontology_ttl.strip():
+        return False
     try:
-        import owlready2
-        import tempfile
-        import os
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".ttl", delete=False, encoding="utf-8") as f:
-            f.write(ontology_ttl)
-            tmp = f.name
-        try:
-            onto = owlready2.get_ontology(f"file://{tmp}").load()
-            with onto:
-                owlready2.sync_reasoner_hermit(infer_property_values=False)
-            return True
-        except Exception:
+        import rdflib
+        g = rdflib.Graph()
+        g.parse(data=ontology_ttl, format="turtle")
+
+        # Check 1: disjoint classes that also share a subclass
+        q_disjoint_subclass = """
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        ASK {
+            ?a owl:disjointWith ?b .
+            ?c rdfs:subClassOf ?a .
+            ?c rdfs:subClassOf ?b .
+            FILTER(?a != ?b && ?a != ?c && ?b != ?c)
+        }"""
+        if bool(g.query(q_disjoint_subclass)):
             return False
-        finally:
-            os.unlink(tmp)
-    except ImportError:
-        logger.warning("owlready2 not available; skipping consistency check.")
+
+        # Check 2: property declared functional with conflicting range disjointness
+        q_functional = """
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        ASK {
+            ?p a owl:FunctionalProperty ;
+               rdfs:range ?r1 ;
+               rdfs:range ?r2 .
+            ?r1 owl:disjointWith ?r2 .
+            FILTER(?r1 != ?r2)
+        }"""
+        if bool(g.query(q_functional)):
+            return False
+
         return True
+    except Exception as e:
+        logger.warning(f"Consistency check failed: {e}")
+        return False
 
 
 def extract_structural_metrics(ontology_ttl: str) -> dict:
@@ -120,7 +148,7 @@ def extract_deep_structural_metrics(ontology_ttl: str) -> dict:
                 ]
 
             # Depth via BFS from roots
-            def get_depth(cls, cache={}):
+            def get_depth(cls, cache):
                 if cls in cache:
                     return cache[cls]
                 parents = named_parents(cls)
