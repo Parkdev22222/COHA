@@ -363,12 +363,17 @@ class SelfImprovingPhaseGate:
         """Extract key OWL triples as a compact string (no LLM needed).
 
         Returns e.g. ":hasCommander(ObjectProperty, :Unit→:Commander); :Mission(Class)"
+
+        A parse failure here silently drops the DK success pattern (the grounded
+        rule survives, but nothing reaches dk_success_patterns / dk_guide_*.md),
+        so we normalize malformed @prefix lines first and log any failure.
         """
         try:
             from coha.fq_checker import _parse, OWL, RDFS
+            from coha.owl_utils import _fix_prefix_declarations
             import rdflib
 
-            g = _parse(delta_oi)
+            g = _parse(_fix_prefix_declarations(delta_oi))
 
             def local(uri):
                 s = str(uri)
@@ -403,7 +408,11 @@ class SelfImprovingPhaseGate:
                         if len(items) >= max_items:
                             break
             return "; ".join(items)
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                f"_compress_owl_pattern: delta-Oi parse failed — DK success pattern "
+                f"will be dropped for this CQ: {e}"
+            )
             return ""
 
     def check_completeness(self, final_ontology_ttl: str, dk_rules: List[str]) -> dict:
