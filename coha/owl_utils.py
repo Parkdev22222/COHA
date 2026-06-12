@@ -18,8 +18,25 @@ BASE_PREFIXES = """@prefix : <http://coha.org/military#> .
 """
 
 
+def _strip_code_fence(text: str) -> str:
+    """Strip a single wrapping markdown code fence (```turtle / ```ttl / ```)."""
+    s = text.strip()
+    for marker in ("```turtle", "```ttl", "```"):
+        if s.startswith(marker):
+            content_start = len(marker)
+            nl = s.find("\n", content_start)
+            content_start = nl + 1 if nl != -1 else content_start
+            end = s.rfind("```")
+            if end > content_start:
+                return s[content_start:end].strip()
+            return s[content_start:].strip()
+    return s
+
+
 def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
     """Merge delta-Oi into accumulated ontology, deduplicating prefixes."""
+    # Defensive: strip any residual code fence that AxiomGenerator may have missed
+    delta_oi = _strip_code_fence(delta_oi)
     if not base_ttl.strip():
         return BASE_PREFIXES + "\n" + delta_oi.strip()
     if not delta_oi.strip():

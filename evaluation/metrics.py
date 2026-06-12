@@ -241,16 +241,25 @@ def compute_odp_coverage(ontology_ttl: str) -> dict:
 
 
 def _clean_turtle_for_rdflib(ttl: str) -> str:
-    """Strip markdown fences from Turtle text before rdflib parsing."""
-    for marker in ["```turtle", "```ttl", "```"]:
-        if marker in ttl:
-            start = ttl.find(marker) + len(marker)
-            nl = ttl.find("\n", start)
-            start = nl + 1 if nl != -1 else start
-            end = ttl.rfind("```")
-            if end > start:
-                return ttl[start:end].strip()
-    return ttl.strip()
+    """Strip markdown code fence only when the ENTIRE text is wrapped in one.
+
+    Using `in` (search anywhere) caused false positives: if the accumulated TTL
+    contained any backtick character (e.g. in an rdfs:comment or a stray LLM
+    artifact), the function would extract a mid-TTL fragment that lacks @prefix
+    declarations, producing rdflib "at line 2 of <>" parse errors.
+    Using startswith() ensures we only strip when the whole string is fenced.
+    """
+    s = ttl.strip()
+    for marker in ("```turtle", "```ttl", "```"):
+        if s.startswith(marker):
+            content_start = len(marker)
+            nl = s.find("\n", content_start)
+            content_start = nl + 1 if nl != -1 else content_start
+            end = s.rfind("```")
+            if end > content_start:
+                return s[content_start:end].strip()
+            return s[content_start:].strip()
+    return s
 
 
 def _inject_sparql_prefixes(sparql: str) -> str:
