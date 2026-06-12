@@ -45,7 +45,9 @@ FQ_VIOLATION_GUIDANCE: dict = {
         "An entity must not be declared as both owl:Class and a property type"
     ),
     "FQ-PARSE": (
-        "Output must be valid Turtle syntax — no markdown fences, no prose, only RDF triples"
+        "Output must be valid Turtle syntax — no markdown fences, no prose, only RDF triples. "
+        "Every @prefix line MUST end with a period: '@prefix owl: <...> .' (dot required). "
+        "Every triple MUST end with '.' or ';' as appropriate."
     ),
 }
 

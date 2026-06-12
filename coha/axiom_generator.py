@@ -173,17 +173,29 @@ class AxiomGenerator:
 
     @staticmethod
     def _clean_turtle(text: str) -> str:
-        """Extract clean Turtle from LLM response."""
+        """Extract clean Turtle from LLM response and fix common @prefix errors.
+
+        After stripping any code fence, normalizes @prefix declarations:
+          @prefix owl <URI>   →  @prefix owl: <URI> .  (missing colon + dot)
+          @prefix owl: <URI>  →  @prefix owl: <URI> .  (missing dot only)
+
+        Applying this here means both the FQ gate and merge_ontologies see
+        the corrected Turtle, preventing repeated FQ-PARSE failures that
+        cause valid delta-Oi content to be discarded.
+        """
+        from coha.owl_utils import _fix_prefix_declarations
         for marker in ["```turtle", "```ttl"]:
             if marker in text:
                 start = text.find(marker) + len(marker)
                 end = text.find("```", start)
-                return text[start:end].strip() if end != -1 else text[start:].strip()
+                extracted = text[start:end].strip() if end != -1 else text[start:].strip()
+                return _fix_prefix_declarations(extracted)
         if "```" in text:
             start = text.find("```") + 3
             nl = text.find("\n", start)
             if nl != -1:
                 start = nl + 1
             end = text.find("```", start)
-            return text[start:end].strip() if end != -1 else text[start:].strip()
-        return text.strip()
+            extracted = text[start:end].strip() if end != -1 else text[start:].strip()
+            return _fix_prefix_declarations(extracted)
+        return _fix_prefix_declarations(text.strip())
