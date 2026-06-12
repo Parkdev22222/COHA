@@ -240,6 +240,25 @@ def compute_odp_coverage(ontology_ttl: str) -> dict:
     }
 
 
+def _fix_prefix_declarations(ttl: str) -> str:
+    """Fix common LLM @prefix errors (mirror of coha.owl_utils version).
+
+    1. Missing colon:  @prefix owl <URI>  →  @prefix owl: <URI>
+    2. Missing dot:    @prefix owl: <URI> →  @prefix owl: <URI> .
+    """
+    lines = []
+    for line in ttl.split("\n"):
+        s = line.strip()
+        if s.startswith("@prefix"):
+            s = re.sub(r"(@prefix\s+)([a-zA-Z][a-zA-Z0-9_-]*)(\s+<)", r"\1\2:\3", s)
+            if not s.endswith("."):
+                s = s.rstrip() + " ."
+            lines.append(s)
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def _filter_turtle_lines(ttl: str) -> str:
     """Remove natural-language prose lines that cause rdflib parse failures.
 
@@ -367,6 +386,7 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
         return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
 
     clean_ttl = _clean_turtle_for_rdflib(ontology_ttl)
+    clean_ttl = _fix_prefix_declarations(clean_ttl)
     g = Graph()
     try:
         g.parse(data=clean_ttl, format="turtle")

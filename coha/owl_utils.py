@@ -65,7 +65,35 @@ def _filter_turtle_lines(text: str) -> str:
     return "\n".join(kept)
 
 
-def _is_valid_turtle(ttl: str) -> bool:
+def _fix_prefix_declarations(ttl: str) -> str:
+    """Fix common LLM errors in @prefix declaration lines.
+
+    Two patterns the LLM commonly gets wrong:
+      1. Missing colon after prefix name:
+           @prefix owl <http://...> .   →  @prefix owl: <http://...> .
+      2. Missing terminal dot:
+           @prefix owl: <http://...>    →  @prefix owl: <http://...> .
+
+    Leaves valid declarations untouched (e.g. @prefix : <...> . is already
+    correct — the `:` here is the prefix separator, not a prefix name).
+    """
+    lines = []
+    for line in ttl.split("\n"):
+        s = line.strip()
+        if s.startswith("@prefix"):
+            # Fix missing colon: @prefix WORD <URI> → @prefix WORD: <URI>
+            # Pattern: prefix-name is a letter-started word immediately followed by whitespace+<
+            s = re.sub(r"(@prefix\s+)([a-zA-Z][a-zA-Z0-9_-]*)(\s+<)", r"\1\2:\3", s)
+            # Fix missing terminal dot
+            if not s.endswith("."):
+                s = s.rstrip() + " ."
+            lines.append(s)
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+
     """Return True if the Turtle is syntactically parseable by rdflib."""
     if not ttl.strip():
         return True
@@ -79,9 +107,10 @@ def _is_valid_turtle(ttl: str) -> bool:
 
 def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
     """Merge delta-Oi into accumulated ontology, deduplicating prefixes."""
-    # Defensive: strip any residual code fence that AxiomGenerator may have missed
+    # Defensive: strip code fence and fix common @prefix syntax errors
     delta_oi = _strip_code_fence(delta_oi)
-    # If delta_oi fails to parse (e.g. LLM prose mixed in), strip prose-only lines
+    delta_oi = _fix_prefix_declarations(delta_oi)
+    # If delta_oi still fails to parse (e.g. LLM prose mixed in), strip prose-only lines
     # and retry.  ONLY filter on failure — valid Turtle must never be modified.
     if delta_oi.strip() and not _is_valid_turtle(BASE_PREFIXES + "\n" + delta_oi.strip()):
         filtered = _filter_turtle_lines(delta_oi)
@@ -122,6 +151,7 @@ def check_consistency(ontology_ttl: str) -> bool:
     """
     if not ontology_ttl or not ontology_ttl.strip():
         return True  # empty ontology has no axioms to violate — structurally valid
+    ontology_ttl = _fix_prefix_declarations(ontology_ttl)
     try:
         import rdflib
         g = rdflib.Graph()
@@ -200,6 +230,7 @@ def extract_deep_structural_metrics(ontology_ttl: str) -> dict:
         import tempfile
         import os
 
+        ontology_ttl = _fix_prefix_declarations(ontology_ttl)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".ttl", delete=False, encoding="utf-8"
         ) as f:
