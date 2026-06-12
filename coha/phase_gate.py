@@ -77,9 +77,17 @@ class SelfImprovingPhaseGate:
     Self-Improving Phase Gate: validates delta-Oi and inductively updates FQ and DK rule sets.
     """
 
-    def __init__(self, llm_client, config: GateConfig):
+    def __init__(self, llm_client, config: GateConfig, domain_docs: str = None):
         self.llm_client = llm_client
         self.config = config
+        # Build a doctrine retriever for grounding DK rules (if docs provided)
+        self.retriever = None
+        if domain_docs:
+            try:
+                from domain.doc_retriever import DomainDocRetriever
+                self.retriever = DomainDocRetriever(domain_docs)
+            except Exception as e:
+                logger.warning(f"Could not build doc retriever; DK grounding disabled: {e}")
 
     def process(self, delta_oi: str, handoff, cq: str) -> GateResult:
         """Run all 4 gate steps for a single CQ's generated delta-Oi."""
@@ -198,13 +206,17 @@ class SelfImprovingPhaseGate:
         return []
 
     def _extract_dk_rules(self, delta_oi: str, existing_dk_rules: List[str]) -> List[str]:
-        """Inductively extract DK rules, classified as [STRUCT] or [COMPL].
+        """Inductively extract DK rules, each GROUNDED in published doctrine.
 
-        [STRUCT] — immediate structural constraint; must hold within this delta-Oi.
-                   e.g. relationship directions, prohibited patterns.
-        [COMPL]  — eventual completeness goal; the concept should have these
-                   properties by the time the full ontology is complete.
-                   NOT enforced per CQ — checked only at the end.
+        Pipeline (paper §3.2.2):
+          1. LLM induces 0-2 candidate rules from delta-Oi, classified [STRUCT]/[COMPL]
+          2. Each candidate is grounded against the doctrine corpus via retrieval +
+             LLM verification. Only rules supported by a doctrine passage are kept,
+             with a source citation appended as "(src: <section>)".
+
+        This removes the n=1 self-referential weakness: a rule is accepted only if
+        an external authority (ADP/FM doctrine) supports it, not merely because the
+        LLM generated an axiom matching it.
         """
         existing_text = (
             "\n".join(f"- {r}" for r in existing_dk_rules[-10:])
@@ -230,15 +242,61 @@ class SelfImprovingPhaseGate:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=256)
             if "NONE" in resp.upper()[:20]:
                 return []
-            rules = []
+            candidates = []
             for line in resp.strip().split("\n"):
                 line = line.strip().strip("- ")
                 if len(line) > 10 and (line.startswith("[STRUCT]") or line.startswith("[COMPL]")):
-                    rules.append(line)
-            return rules[:2]
+                    candidates.append(line)
+            candidates = candidates[:2]
         except Exception as e:
             logger.warning(f"DK rule extraction error: {e}")
-        return []
+            return []
+
+        # Ground each candidate in doctrine. If no retriever, fall back to ungrounded
+        # acceptance (so ablations without docs still run).
+        if not self.retriever:
+            return candidates
+
+        grounded = []
+        for rule in candidates:
+            citation = self._ground_rule(rule)
+            if citation:
+                grounded.append(f"{rule} (src: {citation})")
+            else:
+                logger.info(f"DK rule rejected (no doctrine support): {rule}")
+        return grounded
+
+    def _ground_rule(self, rule: str) -> str:
+        """Return a doctrine section citation if the rule is supported, else ''.
+
+        Two-step: (1) retrieve the most relevant doctrine passage,
+                  (2) LLM verifies the passage actually supports the rule.
+        """
+        evidence = self.retriever.retrieve_evidence(rule, top_k=2)
+        if not evidence:
+            return ""
+        passages = "\n\n".join(
+            f"[{self.retriever.section_title(c)}]\n{c[:700]}" for c, _ in evidence
+        )
+        prompt = (
+            "You are verifying whether a proposed military ontology rule is supported by "
+            "published US Army doctrine.\n\n"
+            f"PROPOSED RULE:\n{rule}\n\n"
+            f"DOCTRINE PASSAGES:\n{passages}\n\n"
+            "Is the proposed rule consistent with and supported by these doctrine passages?\n"
+            "Answer SUPPORTED or UNSUPPORTED on the first line.\n"
+            "If SUPPORTED, on the second line give the single most relevant section title."
+        )
+        try:
+            resp = self.llm_client.generate(system="", user=prompt, max_tokens=128)
+            lines = [l.strip() for l in resp.strip().split("\n") if l.strip()]
+            if lines and lines[0].upper().startswith("SUPPORTED"):
+                if len(lines) > 1:
+                    return lines[1].strip().strip("[]").strip()[:60]
+                return self.retriever.section_title(evidence[0][0])
+        except Exception as e:
+            logger.warning(f"DK grounding verification error: {e}")
+        return ""
 
     def check_completeness(self, final_ontology_ttl: str, dk_rules: List[str]) -> dict:
         """Check [COMPL] rules against the final merged ontology (called once at experiment end).

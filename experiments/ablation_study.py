@@ -21,6 +21,7 @@ def run_ablation_study(save_results: bool = True) -> dict:
     from config import RESULTS_DIR
     from llm_client import get_client
     from domain.military_cq_benchmark import ALL_CQS, GOLD_STANDARD_TTL, USER_STORY
+    from domain.military_docs import DOMAIN_DOCS
     from coha.harness import COHAHarness, HarnessConfig
     from baselines.vanilla_cqbycq import VanillaCQbyCQ
     from evaluation.evaluator import COHAEvaluator
@@ -33,11 +34,11 @@ def run_ablation_study(save_results: bool = True) -> dict:
     evaluator = COHAEvaluator(client, ALL_CQS, GOLD_STANDARD_TTL)
 
     ablation_conditions = [
-        ("COHA-full",        lambda: COHAHarness(client, HarnessConfig.coha_full()).run(ALL_CQS, USER_STORY)),
-        ("COHA-no-reset",    lambda: COHAHarness(client, HarnessConfig.coha_no_reset()).run(ALL_CQS, USER_STORY)),
-        ("COHA-no-DK",       lambda: COHAHarness(client, HarnessConfig.coha_no_dk()).run(ALL_CQS, USER_STORY)),
-        ("COHA-no-FQ",       lambda: COHAHarness(client, HarnessConfig.coha_no_fq()).run(ALL_CQS, USER_STORY)),
-        ("COHA-static-gate", lambda: COHAHarness(client, HarnessConfig.coha_static_gate()).run(ALL_CQS, USER_STORY)),
+        ("COHA-full",        lambda: COHAHarness(client, HarnessConfig.coha_full(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-no-reset",    lambda: COHAHarness(client, HarnessConfig.coha_no_reset(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-no-DK",       lambda: COHAHarness(client, HarnessConfig.coha_no_dk(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-no-FQ",       lambda: COHAHarness(client, HarnessConfig.coha_no_fq(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-static-gate", lambda: COHAHarness(client, HarnessConfig.coha_static_gate(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
         ("Vanilla-CQbyCQ",   lambda: VanillaCQbyCQ(client).run(ALL_CQS, USER_STORY)),
     ]
 

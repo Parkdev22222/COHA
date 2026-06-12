@@ -45,13 +45,13 @@ def run_main_experiment(save_results: bool = True) -> dict:
         # CQbyCQ family
         ("B2-Vanilla-CQbyCQ",  lambda: VanillaCQbyCQ(client).run(ALL_CQS, USER_STORY)),
         ("B7-Static-Gate",     lambda: StaticGateCQbyCQ(client).run(ALL_CQS, USER_STORY)),
-        # COHA ablation conditions
-        ("COHA-no-reset",      lambda: COHAHarness(client, HarnessConfig.coha_no_reset()).run(ALL_CQS, USER_STORY)),
-        ("COHA-no-FQ",         lambda: COHAHarness(client, HarnessConfig.coha_no_fq()).run(ALL_CQS, USER_STORY)),
-        ("COHA-no-DK",         lambda: COHAHarness(client, HarnessConfig.coha_no_dk()).run(ALL_CQS, USER_STORY)),
-        ("COHA-full",          lambda: COHAHarness(client, HarnessConfig.coha_full()).run(ALL_CQS, USER_STORY)),
+        # COHA ablation conditions (DK rules grounded in DOMAIN_DOCS doctrine)
+        ("COHA-no-reset",      lambda: COHAHarness(client, HarnessConfig.coha_no_reset(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-no-FQ",         lambda: COHAHarness(client, HarnessConfig.coha_no_fq(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-no-DK",         lambda: COHAHarness(client, HarnessConfig.coha_no_dk(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA-full",          lambda: COHAHarness(client, HarnessConfig.coha_full(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
         # COHA+Ontogenia: COHA self-improving gate + metacognitive generation + ODP injection
-        ("COHA+Ontogenia",     lambda: COHAHarness(client, HarnessConfig.coha_ontogenia()).run(ALL_CQS, USER_STORY)),
+        ("COHA+Ontogenia",     lambda: COHAHarness(client, HarnessConfig.coha_ontogenia(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
     ]
 
     all_results = {}

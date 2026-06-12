@@ -72,11 +72,14 @@ class HarnessConfig:
 
 
 class COHAHarness:
-    def __init__(self, llm_client, config: HarnessConfig):
+    def __init__(self, llm_client, config: HarnessConfig, domain_docs: str = None):
         self.llm_client = llm_client
         self.config = config
         self.generator = AxiomGenerator(llm_client)
-        self.phase_gate = SelfImprovingPhaseGate(llm_client, config.gate_config)
+        # domain_docs enables doctrine-grounded DK rule extraction (paper §3.2.2)
+        self.phase_gate = SelfImprovingPhaseGate(
+            llm_client, config.gate_config, domain_docs=domain_docs
+        )
 
     def run(self, cqs: List[str], user_story: str) -> dict:
         """
