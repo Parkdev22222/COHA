@@ -41,15 +41,19 @@ class GateConfig:
 
     @classmethod
     def static_gate(cls):
+        # Fixed FQ catalog active from the start (no inductive growth).
+        # Rule strings are "<check_id>: <desc>" so they map to deterministic checks.
         return cls(
             fq_accumulate=False,
             dk_accumulate=False,
             initial_fq_rules=[
-                "owl:ObjectProperty must have explicit rdfs:domain and rdfs:range",
-                "owl:Class declarations must include rdfs:label annotation",
-                "No duplicate class or property URIs within delta-Oi",
-                "rdfs:subClassOf must reference an already-declared class",
-                "owl:DatatypeProperty range must be an xsd: datatype",
+                "FQ-OBJPROP-DOMRANGE: owl:ObjectProperty must have explicit rdfs:domain and rdfs:range",
+                "FQ-CLASS-LABEL: owl:Class declarations must include rdfs:label",
+                "FQ-PROP-LABEL: Object/Datatype properties must include rdfs:label",
+                "FQ-DATPROP-XSD-RANGE: owl:DatatypeProperty range must be an xsd: datatype",
+                "FQ-SUBCLASS-RESOURCE: rdfs:subClassOf target must be a class resource, not a literal",
+                "FQ-NO-PROP-TYPE-CONFLICT: A property must not be both ObjectProperty and DatatypeProperty",
+                "FQ-NO-CLASS-PROP-CONFLICT: An entity must not be declared both a Class and a property",
             ],
         )
 
@@ -101,13 +105,10 @@ class SelfImprovingPhaseGate:
         else:
             active_fq_rules = []
 
-        # Step 1: Formal Validation
-        fq_violations = (
-            self._validate_formal(delta_oi, active_fq_rules) if active_fq_rules else []
+        # Step 1: Formal Validation (deterministic rdflib checks)
+        fq_violations, new_fq_rules = self._validate_formal_deterministic(
+            delta_oi, active_fq_rules
         )
-        new_fq_rules = []
-        if self.config.fq_accumulate:
-            new_fq_rules = self._extract_fq_rules(delta_oi, bool(fq_violations))
 
         # Step 2: Domain Validation
         active_dk_rules = handoff.domain_knowledge_rules if self.config.dk_accumulate else []
@@ -134,49 +135,52 @@ class SelfImprovingPhaseGate:
             latency_ms=latency_ms,
         )
 
-    def _validate_formal(self, delta_oi: str, fq_rules: List[str]) -> List[str]:
-        rules_text = "\n".join(f"- {r}" for r in fq_rules)
-        prompt = (
-            "You are an OWL ontology quality validator.\n\n"
-            f"FORMAL QUALITY RULES:\n{rules_text}\n\n"
-            f"OWL AXIOMS TO VALIDATE:\n```turtle\n{delta_oi[:2000]}\n```\n\n"
-            "Do these OWL axioms violate any formal quality rule?\n"
-            "Answer YES or NO on the first line.\n"
-            "If YES, list each violated rule on a separate line."
-        )
-        try:
-            resp = self.llm_client.generate(system="", user=prompt, max_tokens=512)
-            lines = [l.strip() for l in resp.strip().split("\n") if l.strip()]
-            if lines and lines[0].upper().startswith("YES"):
-                return lines[1:] if len(lines) > 1 else ["Formal quality violation detected."]
-        except Exception as e:
-            logger.warning(f"FQ validation error: {e}")
-        return []
+    @staticmethod
+    def _fq_rule_to_check_id(rule: str) -> str:
+        """Map a stored FQ rule string back to its check id (id is the prefix)."""
+        return rule.split(":", 1)[0].strip() if ":" in rule else rule.strip()
 
-    def _extract_fq_rules(self, delta_oi: str, had_violations: bool) -> List[str]:
-        outcome = "FAILED (violations detected)" if had_violations else "SUCCEEDED"
-        prompt = (
-            "You are learning formal quality rules for OWL ontology generation.\n\n"
-            f"GENERATION OUTCOME: {outcome}\n\n"
-            f"OWL AXIOMS:\n```turtle\n{delta_oi[:2000]}\n```\n\n"
-            "Based on this generation, what NEW formal quality rule (if any) should be added "
-            "to prevent future issues or enforce good OWL structural practices?\n"
-            "Rules must be GENERAL (structural/logical, not domain-specific).\n"
-            "Return 0-2 rules, one per line. If none warranted, reply NONE."
-        )
-        try:
-            resp = self.llm_client.generate(system="", user=prompt, max_tokens=256)
-            if "NONE" in resp.upper()[:20]:
-                return []
-            rules = [
-                l.strip("- ").strip()
-                for l in resp.strip().split("\n")
-                if l.strip() and len(l.strip()) > 10
-            ]
-            return rules[:2]
-        except Exception as e:
-            logger.warning(f"FQ rule extraction error: {e}")
-        return []
+    def _validate_formal_deterministic(self, delta_oi: str, active_fq_rules: List[str]):
+        """Deterministic FQ validation via rdflib (paper §3.2.2 Step 1).
+
+        Returns (fq_violations, new_fq_rules).
+
+        Semantics:
+          - static / no-accumulate mode (initial_fq_rules set, fq_accumulate=False):
+                run the fixed catalog; ALL violations are hard failures.
+          - accumulate mode (fq_accumulate=True):
+                the *active* check set grows over CQs. A check already active
+                produces hard violations. A check that fires for the FIRST time is
+                ACTIVATED (added to new_fq_rules) but does NOT block this delta —
+                this first observation is the inductive "learning" moment, yielding
+                the self-improving curve (RAR).
+          - disabled (no active rules, no accumulate): no FQ checks run.
+        """
+        from coha.fq_checker import run_checks, ALL_CHECK_IDS, FQ_CHECKS, describe
+
+        # Static mode: fixed catalog, every violation blocks.
+        if not self.config.fq_accumulate:
+            if not active_fq_rules:
+                return [], []
+            active_ids = [self._fq_rule_to_check_id(r) for r in active_fq_rules]
+            active_ids = [c for c in active_ids if c in FQ_CHECKS] or ALL_CHECK_IDS
+            fired = run_checks(delta_oi, active_ids)
+            violations = [m for msgs in fired.values() for m in msgs]
+            return violations, []
+
+        # Accumulate mode: run the full catalog, split into active vs newly-learned.
+        active_ids = set(self._fq_rule_to_check_id(r) for r in active_fq_rules)
+        fired = run_checks(delta_oi, ALL_CHECK_IDS)
+
+        hard_violations = []
+        newly_learned = []
+        for cid, msgs in fired.items():
+            if cid in active_ids:
+                hard_violations.extend(msgs)
+            else:
+                # First time we see this violation type: learn the rule, don't block now.
+                newly_learned.append(describe(cid))
+        return hard_violations, newly_learned
 
     def _validate_domain(self, delta_oi: str, dk_rules: List[str]) -> List[str]:
         # Only enforce [STRUCT] rules per CQ.

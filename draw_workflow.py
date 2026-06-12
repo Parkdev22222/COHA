@@ -102,6 +102,17 @@ def llm_badge(x, y, number, size=0.38):
             linespacing=1.1)
 
 
+C_DET = "#2E86C1"  # deterministic (rdflib) badge
+
+def det_badge(x, y, size=0.38):
+    """Draw a deterministic (rdflib, no LLM) badge: blue circle."""
+    circ = Circle((x, y), size/2, color=C_DET, zorder=8)
+    ax.add_patch(circ)
+    ax.text(x, y, "rdf\nlib", ha="center", va="center",
+            fontsize=6.0, color="white", fontweight="bold", zorder=9,
+            linespacing=1.1)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TITLE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -190,21 +201,21 @@ arr(8, 16.72, 8, 16.2)
 bg_rect(0.9, 8.2, 14.2, 8.0, "#F4ECF7", ec="#8E44AD", alpha=0.28, lw=1.3,
         label="Self-Improving Phase Gate", zorder=1)
 
-# ── Step 1: FQ Validation  — LLM ②
+# ── Step 1: FQ Validation  — deterministic (rdflib)
 box(6.0, 15.75, 6.2, 0.8,
     "Step 1 · Formal Quality (FQ) Validation",
-    subtitle="_validate_formal(delta_oi, FQ_rules)  →  fq_violations",
+    subtitle="deterministic rdflib checks (FQ_checker)  →  fq_violations",
     fc=C_GATE, ec=C_GATE_B, bold=True, fontsize=9)
-llm_badge(9.28, 16.03, "②")
+det_badge(9.28, 16.03)
 
 arr(6.0, 15.35, 6.0, 14.8)
 
-# ── Step 2: DK Validation  — LLM ④
+# ── Step 2: DK Validation  — LLM ②  ([STRUCT] rules only)
 box(6.0, 14.45, 6.2, 0.8,
     "Step 2 · Domain Knowledge (DK) Validation",
-    subtitle="_validate_domain(delta_oi, DK_rules)  →  dk_violations",
+    subtitle="_validate_domain  →  [STRUCT] rules only  →  dk_violations",
     fc=C_GATE, ec=C_GATE_B, bold=True, fontsize=9)
-llm_badge(9.28, 14.73, "④")
+llm_badge(9.28, 14.73, "②")
 
 arr(6.0, 14.05, 6.0, 13.55)
 
@@ -212,29 +223,29 @@ arr(6.0, 14.05, 6.0, 13.55)
 bg_rect(1.1, 12.15, 13.8, 1.5, "#EDE7F6", ec="#7B1FA2", alpha=0.4, lw=1.0,
         label="Step 3 · Rule Extraction", zorder=2)
 
-# FQ Extraction  — LLM ③
+# FQ Extraction  — deterministic (check activation)
 box(5.0, 12.9, 5.6, 0.75,
-    "Extract new FQ Rules",
-    subtitle="_extract_fq_rules(delta_oi)",
+    "Activate new FQ checks",
+    subtitle="first-seen violation → activate (rdflib)",
     fc=C_GATE, ec=C_GATE_B, fontsize=8.8)
-llm_badge(7.97, 13.16, "③")
+det_badge(7.97, 13.16)
 
-# DK Extraction  — LLM ⑤
+# DK Extraction + doctrine grounding  — LLM ③
 box(11.0, 12.9, 5.6, 0.75,
-    "Extract new DK Rules",
-    subtitle="_extract_dk_rules(delta_oi)",
+    "Extract + ground DK Rules",
+    subtitle="_extract_dk_rules → doctrine grounding",
     fc=C_GATE, ec=C_GATE_B, fontsize=8.8)
-llm_badge(13.97, 13.16, "⑤")
+llm_badge(13.97, 13.16, "③")
 
 arr(4.8, 14.05, 4.8, 13.28)
 arr(7.2, 14.05, 10.5, 13.28)
 
-# ── DK Conflict Resolution  — LLM ⑥
+# ── DK Conflict Resolution  — LLM ④
 box(8, 11.35, 7.0, 0.8,
     "DK Conflict Resolution",
     subtitle="resolve_dk_conflicts(existing, new)  —  LLM adjudicates contradictions",
     fc=C_GATE_H, ec="#76448A", fontsize=9)
-llm_badge(11.72, 11.63, "⑥")
+llm_badge(11.72, 11.63, "④")
 
 arr(5.0, 12.52, 6.5, 11.75)
 arr(11.0, 12.52, 9.5, 11.75)
@@ -349,7 +360,8 @@ legend_patches = [
     mpatches.Patch(fc=C_GATE, ec=C_GATE_B, label="Phase Gate step",     lw=1.2),
     mpatches.Patch(fc=C_HAND, ec=C_HAND_B, label="Handoff Artifact",    lw=1.2),
     mpatches.Patch(fc=C_REJ,  ec=C_REJ_B,  label="Rejection / Retry",   lw=1.2),
-    mpatches.Patch(fc=C_LLM,  ec=C_LLM,    label="LLM call  ①–⑥",      lw=0),
+    mpatches.Patch(fc=C_LLM,  ec=C_LLM,    label="LLM call  ①–④",      lw=0),
+    mpatches.Patch(fc=C_DET,  ec=C_DET,    label="Deterministic (rdflib)", lw=0),
 ]
 ax.legend(handles=legend_patches, loc="lower right",
           fontsize=8.2, framealpha=0.92, edgecolor="#CCCCCC",
