@@ -125,6 +125,7 @@ class GateResult:
     latency_ms: float
     new_fq_guidance: List[str] = field(default_factory=list)
     new_dk_patterns: List[dict] = field(default_factory=list)
+    new_dk_failures: List[dict] = field(default_factory=list)  # doctrine-rejected candidates
 
     @property
     def violations(self):
@@ -188,9 +189,9 @@ class SelfImprovingPhaseGate:
         dk_violations = (
             self._validate_domain(delta_oi, active_dk_rules) if active_dk_rules else []
         )
-        new_dk_rules, new_dk_patterns = [], []
+        new_dk_rules, new_dk_patterns, new_dk_failures = [], [], []
         if self.config.dk_accumulate:
-            new_dk_rules, new_dk_patterns = self._extract_dk_rules(
+            new_dk_rules, new_dk_patterns, new_dk_failures = self._extract_dk_rules(
                 delta_oi, active_dk_rules, cq=cq, cq_index=cq_index
             )
 
@@ -208,6 +209,7 @@ class SelfImprovingPhaseGate:
             latency_ms=latency_ms,
             new_fq_guidance=new_fq_guidance,
             new_dk_patterns=new_dk_patterns,
+            new_dk_failures=new_dk_failures,
         )
 
     @staticmethod
@@ -290,7 +292,7 @@ class SelfImprovingPhaseGate:
     ):
         """Inductively extract DK rules, each GROUNDED in published doctrine.
 
-        Returns (new_rules: List[str], new_patterns: List[dict]).
+        Returns (new_rules: List[str], new_patterns: List[dict], new_failures: List[dict]).
 
         Pipeline (paper §3.2.2):
           1. LLM induces 0-2 candidate rules from delta-Oi, classified [STRUCT]/[COMPL]
@@ -299,6 +301,8 @@ class SelfImprovingPhaseGate:
              with a source citation appended as "(src: <section>)".
           3. Grounded rules produce a compressed OWL pattern entry stored in
              dk_success_patterns for the self-improving guide.
+          4. Rejected candidates (no doctrine support) are recorded as failure
+             entries so the guide can also teach what NOT to repeat.
         """
         existing_text = (
             "\n".join(f"- {r}" for r in existing_dk_rules[-10:])
@@ -323,7 +327,7 @@ class SelfImprovingPhaseGate:
         try:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=256)
             if "NONE" in resp.upper()[:20]:
-                return [], []
+                return [], [], []
             candidates = []
             for line in resp.strip().split("\n"):
                 # Accept [STRUCT]/[COMPL] anywhere in the line — LLMs often add
@@ -337,11 +341,11 @@ class SelfImprovingPhaseGate:
             candidates = candidates[:2]
         except Exception as e:
             logger.warning(f"DK rule extraction error: {e}")
-            return [], []
+            return [], [], []
 
         if not candidates:
             logger.info(f"DK induction: no [STRUCT]/[COMPL] candidates parsed from LLM response: {resp[:120]!r}")
-            return [], []
+            return [], [], []
         logger.info(f"DK induction: {len(candidates)} candidate rule(s) from CQ {cq_index}")
 
         # Ground each candidate in doctrine. If no retriever, fall back to ungrounded
@@ -351,10 +355,11 @@ class SelfImprovingPhaseGate:
                 "DK grounding skipped: no doctrine retriever (domain_docs not provided) "
                 "— rules accepted ungrounded, dk_success_patterns will stay empty."
             )
-            return candidates, []
+            return candidates, [], []
 
         grounded_rules = []
         grounded_patterns = []
+        rejected_failures = []
         owl_pattern = self._compress_owl_pattern(delta_oi)
         for rule in candidates:
             citation, similarity = self._ground_rule(rule)
@@ -377,7 +382,14 @@ class SelfImprovingPhaseGate:
                     )
             else:
                 logger.info(f"DK rule rejected (no doctrine support): {rule}")
-        return grounded_rules, grounded_patterns
+                rejected_failures.append({
+                    "cq_summary": cq[:80],
+                    "cq_index": cq_index,
+                    "owl_pattern": owl_pattern,
+                    "rule": rule,
+                    "reason": "no doctrine support — rule rejected by grounding verification",
+                })
+        return grounded_rules, grounded_patterns, rejected_failures
 
     def _ground_rule(self, rule: str):
         """Return (citation, similarity) if doctrine supports the rule, else ('', 0.0).

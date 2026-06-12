@@ -11,6 +11,7 @@ Schema from COHA paper (§3.3):
   coverage_gaps          : list[str]
   fq_learned_patterns    : list[str]   — guidance strings learned from past FQ gate failures
   dk_success_patterns    : list[dict]  — doctrine-grounded OWL patterns from past CQ successes
+  dk_failure_patterns    : list[dict]  — doctrine-REJECTED candidates (mistakes to avoid)
 """
 import json
 from dataclasses import dataclass, field
@@ -47,6 +48,7 @@ class HandoffArtifact:
     coverage_gaps: List[str] = field(default_factory=list)
     fq_learned_patterns: List[str] = field(default_factory=list)
     dk_success_patterns: List[dict] = field(default_factory=list)
+    dk_failure_patterns: List[dict] = field(default_factory=list)
 
     @classmethod
     def initial(cls) -> "HandoffArtifact":
@@ -68,6 +70,7 @@ class HandoffArtifact:
             "coverage_gaps": self.coverage_gaps,
             "fq_learned_patterns": self.fq_learned_patterns,
             "dk_success_patterns": self.dk_success_patterns,
+            "dk_failure_patterns": self.dk_failure_patterns,
         }
 
     def to_prompt_text(self) -> str:
@@ -105,12 +108,18 @@ class HandoffArtifact:
             for p in self.fq_learned_patterns:
                 parts.append(f"- {p}")
         if self.dk_success_patterns:
-            parts.append(f"\n=== Doctrine-Grounded Reference Patterns ({len(self.dk_success_patterns)}) ===")
+            parts.append(f"\n=== Doctrine-Grounded Reference Patterns ({len(self.dk_success_patterns)}) — FOLLOW these ===")
             for p in self.dk_success_patterns:
                 src = p.get("citation", "?")
                 pat = p.get("owl_pattern", "?")
                 cq_s = p.get("cq_summary", "")[:60]
                 parts.append(f"- [{src}] {pat}  ← ref: {cq_s}")
+        if self.dk_failure_patterns:
+            parts.append(f"\n=== Doctrine-Rejected Patterns ({len(self.dk_failure_patterns)}) — AVOID repeating these ===")
+            for p in self.dk_failure_patterns:
+                rule = p.get("rule", "?")
+                cq_s = p.get("cq_summary", "")[:60]
+                parts.append(f"- REJECTED: {rule}  (CQ: {cq_s}) — do not assert domain claims without doctrine basis")
         return "\n".join(parts)
 
     def to_json(self) -> str:

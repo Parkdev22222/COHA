@@ -40,20 +40,26 @@ def write_fq_guide(patterns: List[str], iteration: int, output_dir: str, variant
     return path
 
 
-def write_dk_guide(patterns: List[dict], iteration: int, output_dir: str, variant: str = "") -> str:
-    """Write DK doctrine-grounded success patterns guide. Returns path written."""
+def write_dk_guide(
+    patterns: List[dict], iteration: int, output_dir: str, variant: str = "",
+    failures: List[dict] = None,
+) -> str:
+    """Write DK guide: doctrine-grounded successes to FOLLOW and rejected
+    candidates to AVOID. Returns path written."""
     os.makedirs(output_dir, exist_ok=True)
     fname = f"dk_guide_{_safe(variant)}.md" if variant else "dk_guide.md"
     path = os.path.join(output_dir, fname)
+    failures = failures or []
     sorted_pats = sorted(patterns, key=lambda p: p.get("similarity", 0.0), reverse=True)
     lines = [
-        "# DK Doctrine-Grounded Success Patterns",
-        f"*Last updated: CQ {iteration} — top {len(patterns)} case(s) by doctrine similarity*",
+        "# DK Doctrine-Grounded Patterns Guide",
+        f"*Last updated: CQ {iteration} — {len(patterns)} success case(s), {len(failures)} failure case(s)*",
         "",
-        "These OWL patterns were accepted by the DK gate and grounded in published doctrine.",
-        "Use as reference when generating axioms for similar competency questions.",
+        "Success cases were accepted by the DK gate and grounded in published doctrine —",
+        "follow these patterns when generating axioms for similar competency questions.",
+        "Failure cases were REJECTED by doctrine grounding — avoid repeating these mistakes.",
         "",
-        "## Success Cases (sorted by doctrine similarity)",
+        "## ✅ Success Cases — follow these (sorted by doctrine similarity)",
         "",
     ]
     if sorted_pats:
@@ -68,6 +74,21 @@ def write_dk_guide(patterns: List[dict], iteration: int, output_dir: str, varian
             lines.append("")
     else:
         lines.append("*No doctrine-grounded patterns recorded yet.*")
+        lines.append("")
+    lines.append("## ❌ Failure Cases — do NOT repeat these (most recent)")
+    lines.append("")
+    if failures:
+        for i, p in enumerate(failures, 1):
+            cq_label = f"CQ {p['cq_index']}" if p.get("cq_index") else "CQ ?"
+            lines.append(f"### Mistake {i} ({cq_label})")
+            lines.append(f"**CQ:** {p.get('cq_summary', 'N/A')}")
+            if p.get("owl_pattern"):
+                lines.append(f"**OWL Pattern that led to this:** `{p['owl_pattern']}`")
+            lines.append(f"**Rejected Rule:** {p.get('rule', 'N/A')}")
+            lines.append(f"**Why rejected:** {p.get('reason', 'no doctrine support')}")
+            lines.append("")
+    else:
+        lines.append("*No rejected candidates recorded yet.*")
         lines.append("")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

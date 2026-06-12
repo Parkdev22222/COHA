@@ -29,6 +29,7 @@ from coha.owl_utils import (
 logger = logging.getLogger(__name__)
 
 MAX_DK_PATTERNS = 10  # max doctrine-grounded success cases kept in guide (min-heap eviction)
+MAX_DK_FAILURES = 10  # max doctrine-rejected failure cases kept in guide (FIFO, most recent)
 
 
 def _write_guides(
@@ -52,9 +53,25 @@ def _write_guides(
         if fq_enabled:
             write_fq_guide(handoff.fq_learned_patterns, handoff.iteration, guides_dir, variant)
         if dk_enabled:
-            write_dk_guide(handoff.dk_success_patterns, handoff.iteration, guides_dir, variant)
+            write_dk_guide(
+                handoff.dk_success_patterns, handoff.iteration, guides_dir, variant,
+                failures=handoff.dk_failure_patterns,
+            )
     except Exception as e:
         logger.warning(f"Guide write failed (non-fatal): {e}")
+
+
+def _update_dk_failures(existing: List[dict], new_failures: List[dict]) -> List[dict]:
+    """Append doctrine-rejected failure cases, keeping only the most recent
+    MAX_DK_FAILURES entries (FIFO). Duplicate rules (same text) are skipped so
+    a repeatedly-rejected rule doesn't crowd out other lessons."""
+    seen_rules = {f.get("rule", "") for f in existing}
+    result = list(existing)
+    for fail in new_failures:
+        if fail.get("rule", "") not in seen_rules:
+            result.append(fail)
+            seen_rules.add(fail.get("rule", ""))
+    return result[-MAX_DK_FAILURES:]
 
 
 def _update_dk_patterns(existing: List[dict], new_patterns: List[dict]) -> List[dict]:
@@ -255,6 +272,7 @@ class COHAHarness:
                     coverage_gaps=[],
                     fq_learned_patterns=new_fq_patterns,
                     dk_success_patterns=new_dk_pats,
+                    dk_failure_patterns=list(handoff.dk_failure_patterns),
                 )
                 _write_guides(handoff, guides_dir, self.config.name, self.config.gate_config)
                 continue
@@ -275,6 +293,7 @@ class COHAHarness:
             new_dk = list(handoff.domain_knowledge_rules)
             new_fq_patterns = list(dict.fromkeys(handoff.fq_learned_patterns + collected_fq_guidance))
             new_dk_pats = list(handoff.dk_success_patterns)
+            new_dk_fails = list(handoff.dk_failure_patterns)
             if gate_result:
                 new_fq.extend(gate_result.new_fq_rules)
                 new_fq = list(dict.fromkeys(new_fq))
@@ -285,6 +304,9 @@ class COHAHarness:
                 # DK patterns: min-heap eviction — only from accepted (passed) delta
                 if gate_result.passed and gate_result.new_dk_patterns:
                     new_dk_pats = _update_dk_patterns(new_dk_pats, gate_result.new_dk_patterns)
+                # DK failures: doctrine-rejected candidates — lessons on what NOT to assert
+                if gate_result.new_dk_failures:
+                    new_dk_fails = _update_dk_failures(new_dk_fails, gate_result.new_dk_failures)
 
             # RAR: rules added this iteration
             n_rules_after = len(new_fq) + len(new_dk)
@@ -313,6 +335,7 @@ class COHAHarness:
                 coverage_gaps=[],
                 fq_learned_patterns=new_fq_patterns,
                 dk_success_patterns=new_dk_pats,
+                dk_failure_patterns=new_dk_fails,
             )
             _write_guides(handoff, guides_dir, self.config.name, self.config.gate_config)
 
