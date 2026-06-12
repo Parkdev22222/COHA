@@ -21,6 +21,27 @@ logger = logging.getLogger(__name__)
 
 # Deterministic mapping from FQ check ID → actionable OWL generation guideline.
 # Used to build the accumulated FQ guide injected into future CQ prompts.
+def _clean_fq_message(check_id: str, raw_msg: str) -> str:
+    """Convert a raw FQ violation message to a short, actionable guidance string.
+
+    Structural checks (OBJPROP-DOMRANGE, CLASS-LABEL, etc.) already return clean
+    human-readable messages.  FQ-PARSE returns raw rdflib error text which needs
+    to be trimmed to a single actionable line.
+    """
+    if check_id != "FQ-PARSE":
+        # Already clean — just take the first line and cap at 120 chars
+        return raw_msg.split("\n")[0].strip()[:120]
+    # FQ-PARSE: rdflib message is multi-line and cryptic.
+    # Extract the "Bad syntax ..." part which is the most actionable.
+    for line in raw_msg.split("\n"):
+        line = line.strip()
+        if line.startswith("Bad syntax") or line.startswith("Expected"):
+            return f"Turtle syntax error: {line[:100]}"
+    # Fallback: take first non-empty line after "is not valid Turtle:"
+    first = raw_msg.split("is not valid Turtle:")[-1].split("\n")[0].strip()[:100]
+    return f"Turtle parse error: {first}" if first else ""
+
+
 FQ_VIOLATION_GUIDANCE: dict = {
     "FQ-OBJPROP-DOMRANGE": (
         "Always declare both rdfs:domain and rdfs:range for every owl:ObjectProperty"
@@ -140,13 +161,27 @@ class SelfImprovingPhaseGate:
             active_fq_rules = []
 
         # Step 1: Formal Validation (deterministic rdflib checks)
-        fq_violations, new_fq_rules, fired_ids = self._validate_formal_deterministic(
+        fq_violations, new_fq_rules, fired_ids, fired_dict = self._validate_formal_deterministic(
             delta_oi, active_fq_rules
         )
-        # Build actionable guidance strings from fired check IDs (deduped)
-        new_fq_guidance = list(dict.fromkeys(
-            FQ_VIOLATION_GUIDANCE[cid] for cid in fired_ids if cid in FQ_VIOLATION_GUIDANCE
-        ))
+        # Build actionable guidance: static hint + specific instance message per check.
+        # This makes fq_learned_patterns grow with concrete examples the LLM actually made,
+        # not just generic advice — matching the self-improving design intent.
+        new_fq_guidance = []
+        seen = set()
+        for cid in fired_ids:
+            static = FQ_VIOLATION_GUIDANCE.get(cid, "")
+            if static and static not in seen:
+                new_fq_guidance.append(static)
+                seen.add(static)
+            # Add the first concrete violation message for this check (already human-readable
+            # for structural checks; cleaned up for FQ-PARSE).
+            msgs = fired_dict.get(cid, [])
+            if msgs:
+                specific = _clean_fq_message(cid, msgs[0])
+                if specific and specific not in seen:
+                    new_fq_guidance.append(specific)
+                    seen.add(specific)
 
         # Step 2: Domain Validation
         active_dk_rules = handoff.domain_knowledge_rules if self.config.dk_accumulate else []
@@ -202,12 +237,12 @@ class SelfImprovingPhaseGate:
         # Static mode: fixed catalog, every violation blocks.
         if not self.config.fq_accumulate:
             if not active_fq_rules:
-                return [], [], []
+                return [], [], [], {}
             active_ids = [self._fq_rule_to_check_id(r) for r in active_fq_rules]
             active_ids = [c for c in active_ids if c in FQ_CHECKS] or ALL_CHECK_IDS
             fired = run_checks(delta_oi, active_ids)
             violations = [m for msgs in fired.values() for m in msgs]
-            return violations, [], list(fired.keys())
+            return violations, [], list(fired.keys()), fired
 
         # Accumulate mode: run the full catalog. ALL violations block immediately.
         # Track first-time check firings for RAR curve (added to new_fq_rules).
@@ -220,7 +255,7 @@ class SelfImprovingPhaseGate:
             hard_violations.extend(msgs)  # every violation blocks immediately
             if cid not in active_ids:
                 newly_learned.append(describe(cid))  # first observation → RAR curve
-        return hard_violations, newly_learned, list(fired.keys())
+        return hard_violations, newly_learned, list(fired.keys()), fired
 
     def _validate_domain(self, delta_oi: str, dk_rules: List[str]) -> List[str]:
         # Only enforce [STRUCT] rules per CQ.
