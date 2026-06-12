@@ -31,17 +31,27 @@ logger = logging.getLogger(__name__)
 MAX_DK_PATTERNS = 10  # max doctrine-grounded success cases kept in guide (min-heap eviction)
 
 
-def _write_guides(handoff: "HandoffArtifact", guides_dir: str, variant: str = "") -> None:
+def _write_guides(
+    handoff: "HandoffArtifact", guides_dir: str, variant: str = "",
+    gate_config: "GateConfig" = None,
+) -> None:
     """Write FQ and DK guides to Markdown files (called after each CQ update).
 
     Each variant writes to its own file (fq_guide_<variant>.md) so ablation study
     runs don't overwrite each other.
+
+    Guides are written even when their pattern list is still empty — the file
+    itself (with its "no patterns yet" placeholder) is the visible signal that
+    the guide mechanism is active; a missing file previously made it impossible
+    to tell "DK disabled" apart from "DK silently failing".
     """
     try:
         from coha.guide_writer import write_fq_guide, write_dk_guide
-        if handoff.fq_learned_patterns:
+        fq_enabled = gate_config is None or gate_config.fq_accumulate or bool(gate_config.initial_fq_rules)
+        dk_enabled = gate_config is None or gate_config.dk_accumulate
+        if fq_enabled:
             write_fq_guide(handoff.fq_learned_patterns, handoff.iteration, guides_dir, variant)
-        if handoff.dk_success_patterns:
+        if dk_enabled:
             write_dk_guide(handoff.dk_success_patterns, handoff.iteration, guides_dir, variant)
     except Exception as e:
         logger.warning(f"Guide write failed (non-fatal): {e}")
@@ -246,7 +256,7 @@ class COHAHarness:
                     fq_learned_patterns=new_fq_patterns,
                     dk_success_patterns=new_dk_pats,
                 )
-                _write_guides(handoff, guides_dir, self.config.name)
+                _write_guides(handoff, guides_dir, self.config.name, self.config.gate_config)
                 continue
 
             # Merge into accumulated ontology
@@ -304,7 +314,7 @@ class COHAHarness:
                 fq_learned_patterns=new_fq_patterns,
                 dk_success_patterns=new_dk_pats,
             )
-            _write_guides(handoff, guides_dir, self.config.name)
+            _write_guides(handoff, guides_dir, self.config.name, self.config.gate_config)
 
         final_ttl = (
             handoff.accumulated_ontology.ttl if self.config.context_reset else accumulated_ttl

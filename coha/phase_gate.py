@@ -326,17 +326,31 @@ class SelfImprovingPhaseGate:
                 return [], []
             candidates = []
             for line in resp.strip().split("\n"):
-                line = line.strip().strip("- ")
-                if len(line) > 10 and (line.startswith("[STRUCT]") or line.startswith("[COMPL]")):
-                    candidates.append(line)
+                # Accept [STRUCT]/[COMPL] anywhere in the line — LLMs often add
+                # numbering ("1. [STRUCT] ...") or bullets ("- [STRUCT] ...")
+                # despite instructions; startswith() silently dropped all of those.
+                for tag in ("[STRUCT]", "[COMPL]"):
+                    idx = line.find(tag)
+                    if idx != -1 and len(line) - idx > 10:
+                        candidates.append(line[idx:].strip())
+                        break
             candidates = candidates[:2]
         except Exception as e:
             logger.warning(f"DK rule extraction error: {e}")
             return [], []
 
+        if not candidates:
+            logger.info(f"DK induction: no [STRUCT]/[COMPL] candidates parsed from LLM response: {resp[:120]!r}")
+            return [], []
+        logger.info(f"DK induction: {len(candidates)} candidate rule(s) from CQ {cq_index}")
+
         # Ground each candidate in doctrine. If no retriever, fall back to ungrounded
         # acceptance (so ablations without docs still run), with no patterns.
         if not self.retriever:
+            logger.warning(
+                "DK grounding skipped: no doctrine retriever (domain_docs not provided) "
+                "— rules accepted ungrounded, dk_success_patterns will stay empty."
+            )
             return candidates, []
 
         grounded_rules = []
@@ -355,6 +369,12 @@ class SelfImprovingPhaseGate:
                         "similarity": similarity,
                         "rule": rule,
                     })
+                    logger.info(f"DK pattern recorded (CQ {cq_index}, src: {citation}): {rule[:60]}")
+                else:
+                    logger.warning(
+                        f"DK rule grounded but pattern dropped — _compress_owl_pattern "
+                        f"returned empty for CQ {cq_index}: {rule[:60]}"
+                    )
             else:
                 logger.info(f"DK rule rejected (no doctrine support): {rule}")
         return grounded_rules, grounded_patterns
@@ -384,7 +404,10 @@ class SelfImprovingPhaseGate:
         try:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=128)
             lines = [l.strip() for l in resp.strip().split("\n") if l.strip()]
-            if lines and lines[0].upper().startswith("SUPPORTED"):
+            # Lenient verdict parsing: accept "SUPPORTED" anywhere in the first line
+            # (e.g. "The rule is SUPPORTED."), as long as it is not "UNSUPPORTED".
+            first = lines[0].upper() if lines else ""
+            if "SUPPORTED" in first and "UNSUPPORTED" not in first and "NOT SUPPORTED" not in first:
                 citation = (
                     lines[1].strip().strip("[]").strip()[:60]
                     if len(lines) > 1
