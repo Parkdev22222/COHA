@@ -33,10 +33,38 @@ def _strip_code_fence(text: str) -> str:
     return s
 
 
+def _filter_turtle_lines(text: str) -> str:
+    """Remove natural-language prose lines that would cause rdflib parse failures.
+
+    Keeps lines that:
+      - are blank (separators)
+      - start with a Turtle syntax character: # @ : _ < ; , . [ ] ( ) " '
+      - are indented (continuation lines)
+      - start with a known prefix name (e.g. owl:Class, rdfs:subClassOf)
+    Drops lines that start with plain English words (LLM explanatory prose).
+    """
+    _TURTLE_STARTERS = frozenset('#@:_<;,.[]()"\'`')
+    kept = []
+    for line in text.split("\n"):
+        s = line.strip()
+        if not s:
+            kept.append(line)
+        elif s[0] in _TURTLE_STARTERS:
+            kept.append(line)
+        elif line[:1] in (" ", "\t"):
+            kept.append(line)
+        elif re.match(r"^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z_]", s):
+            # prefixed name like owl:Class, rdfs:label (colon immediately followed by a letter)
+            kept.append(line)
+        # else: natural language prose — drop
+    return "\n".join(kept)
+
+
 def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
     """Merge delta-Oi into accumulated ontology, deduplicating prefixes."""
-    # Defensive: strip any residual code fence that AxiomGenerator may have missed
+    # Defensive: strip any residual code fence and prose lines AxiomGenerator may have missed
     delta_oi = _strip_code_fence(delta_oi)
+    delta_oi = _filter_turtle_lines(delta_oi)
     if not base_ttl.strip():
         return BASE_PREFIXES + "\n" + delta_oi.strip()
     if not delta_oi.strip():

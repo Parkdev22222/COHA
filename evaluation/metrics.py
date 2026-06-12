@@ -240,6 +240,28 @@ def compute_odp_coverage(ontology_ttl: str) -> dict:
     }
 
 
+def _filter_turtle_lines(ttl: str) -> str:
+    """Remove natural-language prose lines that cause rdflib parse failures.
+
+    Mirror of coha.owl_utils._filter_turtle_lines — kept local to avoid
+    a cross-module import cycle at evaluation time.
+    """
+    _TURTLE_STARTERS = frozenset('#@:_<;,.[]()"\'`')
+    kept = []
+    for line in ttl.split("\n"):
+        s = line.strip()
+        if not s:
+            kept.append(line)
+        elif s[0] in _TURTLE_STARTERS:
+            kept.append(line)
+        elif line[:1] in (" ", "\t"):
+            kept.append(line)
+        elif re.match(r"^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z_]", s):
+            kept.append(line)
+        # else: prose — drop
+    return "\n".join(kept)
+
+
 def _clean_turtle_for_rdflib(ttl: str) -> str:
     """Strip markdown code fence only when the ENTIRE text is wrapped in one.
 
@@ -347,8 +369,17 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
     try:
         g.parse(data=clean_ttl, format="turtle")
     except Exception as e:
-        logger.warning(f"SPARQL CCR: ontology parse failed: {e}")
-        return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
+        # Fallback: strip prose lines that slipped through AxiomGenerator and retry once
+        filtered_ttl = _filter_turtle_lines(clean_ttl)
+        try:
+            g.parse(data=filtered_ttl, format="turtle")
+            logger.info("SPARQL CCR: parse succeeded after filtering non-Turtle prose lines")
+        except Exception as e2:
+            logger.warning(
+                f"SPARQL CCR: ontology parse failed: {e2} "
+                f"| first 200 chars of TTL: {repr(clean_ttl[:200])}"
+            )
+            return {"coverage_rate": 0.0, "passed": 0, "total": len(cqs), "details": []}
 
     MIL_PREFIX = "http://coha.org/military#"
 
