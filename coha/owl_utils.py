@@ -93,7 +93,7 @@ def _fix_prefix_declarations(ttl: str) -> str:
     return "\n".join(lines)
 
 
-
+def _is_valid_turtle(ttl: str) -> bool:
     """Return True if the Turtle is syntactically parseable by rdflib."""
     if not ttl.strip():
         return True
