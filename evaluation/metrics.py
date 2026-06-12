@@ -256,8 +256,10 @@ def _filter_turtle_lines(ttl: str) -> str:
             kept.append(line)
         elif line[:1] in (" ", "\t"):
             kept.append(line)
+        elif s == "a" or s.startswith(("a ", "a\t")):
+            kept.append(line)  # rdf:type shorthand at column 0
         elif re.match(r"^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z_]", s):
-            kept.append(line)
+            kept.append(line)  # prefixed name like owl:Class, rdfs:label
         # else: prose — drop
     return "\n".join(kept)
 

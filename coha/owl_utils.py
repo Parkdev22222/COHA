@@ -36,11 +36,15 @@ def _strip_code_fence(text: str) -> str:
 def _filter_turtle_lines(text: str) -> str:
     """Remove natural-language prose lines that would cause rdflib parse failures.
 
+    ONLY safe to call on TTL that has already failed to parse — applying it to
+    valid Turtle can corrupt multi-line triples (e.g. unindented `a owl:Class ;`).
+
     Keeps lines that:
       - are blank (separators)
       - start with a Turtle syntax character: # @ : _ < ; , . [ ] ( ) " '
       - are indented (continuation lines)
       - start with a known prefix name (e.g. owl:Class, rdfs:subClassOf)
+      - are the bare `a` keyword (rdf:type shorthand at column 0)
     Drops lines that start with plain English words (LLM explanatory prose).
     """
     _TURTLE_STARTERS = frozenset('#@:_<;,.[]()"\'`')
@@ -53,18 +57,37 @@ def _filter_turtle_lines(text: str) -> str:
             kept.append(line)
         elif line[:1] in (" ", "\t"):
             kept.append(line)
+        elif s == "a" or s.startswith(("a ", "a\t")):
+            kept.append(line)  # rdf:type shorthand
         elif re.match(r"^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z_]", s):
-            # prefixed name like owl:Class, rdfs:label (colon immediately followed by a letter)
-            kept.append(line)
+            kept.append(line)  # prefixed name like owl:Class, rdfs:label
         # else: natural language prose — drop
     return "\n".join(kept)
 
 
+def _is_valid_turtle(ttl: str) -> bool:
+    """Return True if the Turtle is syntactically parseable by rdflib."""
+    if not ttl.strip():
+        return True
+    try:
+        import rdflib
+        rdflib.Graph().parse(data=ttl, format="turtle")
+        return True
+    except Exception:
+        return False
+
+
 def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
     """Merge delta-Oi into accumulated ontology, deduplicating prefixes."""
-    # Defensive: strip any residual code fence and prose lines AxiomGenerator may have missed
+    # Defensive: strip any residual code fence that AxiomGenerator may have missed
     delta_oi = _strip_code_fence(delta_oi)
-    delta_oi = _filter_turtle_lines(delta_oi)
+    # If delta_oi fails to parse (e.g. LLM prose mixed in), strip prose-only lines
+    # and retry.  ONLY filter on failure — valid Turtle must never be modified.
+    if delta_oi.strip() and not _is_valid_turtle(BASE_PREFIXES + "\n" + delta_oi.strip()):
+        filtered = _filter_turtle_lines(delta_oi)
+        if filtered.strip():
+            logger.debug("merge_ontologies: stripped non-Turtle prose lines from delta_oi")
+            delta_oi = filtered
     if not base_ttl.strip():
         return BASE_PREFIXES + "\n" + delta_oi.strip()
     if not delta_oi.strip():
