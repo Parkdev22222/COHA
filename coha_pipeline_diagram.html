@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>COHA: Self-Improving Phase Gate Pipeline</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #1a1d23;
+    color: #e0e0e0;
+    padding: 30px 20px;
+    min-height: 100vh;
+  }
+  h1 {
+    text-align: center;
+    color: #ffffff;
+    margin-bottom: 6px;
+    font-size: 20px;
+    letter-spacing: 1px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8899aa;
+    font-size: 12px;
+    margin-bottom: 28px;
+  }
+
+  .pipeline {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0px;
+  }
+
+  /* ── Input row ─────────────────────────────── */
+  .input-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+  }
+  .input-block {
+    background: linear-gradient(135deg, #1565c0, #1976d2);
+    border: 1px solid #42a5f5;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    color: #e3f2fd;
+    flex: 1;
+    max-width: 220px;
+  }
+  .input-block small {
+    display: block;
+    font-weight: 400;
+    color: #90caf9;
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  /* ── Arrow ──────────────────────────────────── */
+  .arrow {
+    font-size: 22px;
+    color: #546e7a;
+    text-align: center;
+    padding: 4px 0;
+    line-height: 1.2;
+  }
+  .arrow-label {
+    font-size: 11px;
+    color: #78909c;
+  }
+
+  /* ── Init block ─────────────────────────────── */
+  .init-block {
+    background: #263238;
+    border: 1px solid #455a64;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 13px;
+    width: 680px;
+    text-align: center;
+  }
+  .init-block strong { color: #b0bec5; }
+  .handoff-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 8px;
+    list-style: none;
+  }
+  .handoff-fields li {
+    background: #37474f;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: #cfd8dc;
+    font-family: monospace;
+  }
+  .handoff-fields li.new-field {
+    background: #4a3000;
+    color: #ffcc80;
+    border: 1px solid #ff8f00;
+  }
+
+  /* ── Loop container ─────────────────────────── */
+  .loop-container {
+    border: 2px dashed #455a64;
+    border-radius: 14px;
+    padding: 20px 16px 16px;
+    width: 100%;
+    max-width: 980px;
+    background: #1e272e;
+    position: relative;
+  }
+  .loop-label {
+    position: absolute;
+    top: -13px;
+    left: 24px;
+    background: #455a64;
+    color: #eceff1;
+    padding: 3px 14px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── 3-column loop inner ────────────────────── */
+  .loop-inner {
+    display: flex;
+    gap: 14px;
+    align-items: stretch;
+  }
+  .col-left  { flex: 2.0; display: flex; flex-direction: column; gap: 8px; }
+  .col-center { flex: 3.2; display: flex; flex-direction: column; gap: 8px; }
+  .col-right { flex: 2.0; display: flex; flex-direction: column; gap: 8px; }
+
+  /* ── Context / LLM blocks ───────────────────── */
+  .context-block {
+    background: linear-gradient(135deg, #4a148c, #6a1b9a);
+    border: 1px solid #9c27b0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12px;
+    color: #f3e5f5;
+  }
+  .context-block strong { color: #e1bee7; font-size: 13px; }
+  .context-block .fields {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.8;
+    color: #ce93d8;
+  }
+  .llm-block {
+    background: linear-gradient(135deg, #b71c1c, #c62828);
+    border: 1px solid #e53935;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    color: #ffebee;
+  }
+  .llm-block .sub { font-size: 11px; font-weight: 400; color: #ef9a9a; margin-top: 4px; }
+
+  /* ── Phase Gate ─────────────────────────────── */
+  .gate-box {
+    background: #0d1117;
+    border: 1.5px solid #30363d;
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .gate-title {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 800;
+    color: #58a6ff;
+    letter-spacing: 1px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  .fq-section {
+    background: #1c0e0e;
+    border: 1px solid #7f1d1d;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .fq-section .sec-title {
+    color: #f87171;
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .check-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    font-size: 10px;
+    color: #fca5a5;
+    margin: 4px 0 8px;
+  }
+  .check-grid span::before { content: "✓ "; color: #ef4444; }
+
+  .dk-section {
+    background: #0c1e0e;
+    border: 1px solid #14532d;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .dk-section .sec-title {
+    color: #4ade80;
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .dk-steps {
+    font-size: 10px;
+    color: #86efac;
+    line-height: 1.9;
+  }
+
+  .fail-badge {
+    display: inline-block;
+    background: #7f1d1d;
+    color: #fca5a5;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-right: 4px;
+  }
+  .pass-badge {
+    display: inline-block;
+    background: #14532d;
+    color: #4ade80;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-right: 4px;
+  }
+  .new-badge {
+    display: inline-block;
+    background: #78350f;
+    color: #fcd34d;
+    font-size: 8px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  /* ── Right column: Guides ───────────────────── */
+  .fq-guide-block {
+    background: linear-gradient(135deg, #1a0a00, #2d1500);
+    border: 1px solid #d97706;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 11px;
+    color: #fde68a;
+    flex: 1;
+  }
+  .fq-guide-block .guide-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #fbbf24;
+    margin-bottom: 4px;
+  }
+  .fq-guide-block .guide-file {
+    font-size: 10px;
+    color: #92400e;
+    font-family: monospace;
+    margin-bottom: 8px;
+  }
+  .fq-guide-block .guide-content {
+    font-size: 10px;
+    color: #d97706;
+    line-height: 1.7;
+  }
+
+  .dk-guide-block {
+    background: linear-gradient(135deg, #0e0020, #1a0035);
+    border: 1px solid #7c3aed;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 11px;
+    color: #ddd6fe;
+    flex: 1;
+  }
+  .dk-guide-block .guide-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #a78bfa;
+    margin-bottom: 4px;
+  }
+  .dk-guide-block .guide-file {
+    font-size: 10px;
+    color: #5b21b6;
+    font-family: monospace;
+    margin-bottom: 8px;
+  }
+  .dk-guide-block .guide-content {
+    font-size: 10px;
+    color: #7c3aed;
+    line-height: 1.7;
+  }
+  .dk-guide-block .heap-diagram {
+    margin-top: 8px;
+    background: #1e0040;
+    border: 1px solid #4c1d95;
+    border-radius: 6px;
+    padding: 6px;
+    font-size: 10px;
+    color: #c4b5fd;
+    font-family: monospace;
+  }
+
+  /* ── Merge row ──────────────────────────────── */
+  .merge-row {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .merge-block {
+    background: linear-gradient(135deg, #004d40, #00695c);
+    border: 1px solid #26a69a;
+    border-radius: 10px;
+    padding: 10px 24px;
+    font-size: 13px;
+    text-align: center;
+    color: #e0f2f1;
+    width: 680px;
+  }
+  .merge-block .merge-sub {
+    font-size: 11px;
+    color: #80cbc4;
+    margin-top: 4px;
+  }
+
+  /* ── Output row ─────────────────────────────── */
+  .output-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .output-block {
+    background: linear-gradient(135deg, #1b5e20, #2e7d32);
+    border: 1px solid #66bb6a;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    color: #c8e6c9;
+  }
+
+  /* ── Retry loop indicator ───────────────────── */
+  .retry-indicator {
+    background: #1c1400;
+    border: 1px dashed #d97706;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 10px;
+    color: #fbbf24;
+    text-align: center;
+    margin-top: 6px;
+  }
+
+  .col-center-arrow {
+    text-align: center;
+    color: #546e7a;
+    font-size: 16px;
+    padding: 0;
+  }
+  hr.divider {
+    border: none;
+    border-top: 1px solid #30363d;
+    margin: 4px 0;
+  }
+</style>
+</head>
+<body>
+<h1>COHA: Self-Improving Phase Gate Pipeline</h1>
+<div class="subtitle">CQ-Driven Ontology Harness with Adaptive FQ &amp; DK Guides | Context Reset per CQ</div>
+
+<div class="pipeline">
+
+  <!-- ① INPUTS -->
+  <div class="input-row">
+    <div class="input-block">📋 Competency Questions<br><small>N개의 CQ 목록</small></div>
+    <div class="input-block">📖 User Story<br><small>도메인 맥락 설명</small></div>
+    <div class="input-block">🏛 Domain Docs<br><small>ADP 3-0 / FM 3-0 / ROE 교리</small></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- ② INITIALIZATION -->
+  <div class="init-block">
+    <strong>HandoffArtifact.initial() — 초기화</strong>
+    <ul class="handoff-fields">
+      <li>accumulated_ontology_ttl = ""</li>
+      <li>formal_quality_rules = []</li>
+      <li>domain_knowledge_rules = []</li>
+      <li class="new-field">★ fq_learned_patterns = []</li>
+      <li class="new-field">★ dk_success_patterns = []</li>
+    </ul>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- ③ MAIN LOOP -->
+  <div class="loop-container">
+    <div class="loop-label">for each CQ  i = 1 … N</div>
+
+    <div class="loop-inner">
+
+      <!-- LEFT: Context + LLM -->
+      <div class="col-left">
+        <div class="context-block">
+          <strong>Context Reset</strong>
+          <div class="fields">
+            System Prompt에 주입:<br>
+            ├ Accumulated Ontology<br>
+            ├ FQ Rules (7개 고정)<br>
+            ├ DK Rules (누적)<br>
+            ├ <span style="color:#ffcc80;">★ FQ Guide (OWL 생성 주의사항)</span><br>
+            └ <span style="color:#ce93d8;">★ DK Guide (교리 근거 패턴)</span>
+          </div>
+        </div>
+        <div class="col-center-arrow">↓</div>
+        <div class="llm-block">
+          🤖 LLM
+          <div class="sub">δO<sub>i</sub> 생성<br>(새 OWL 공리)</div>
+        </div>
+        <div class="col-center-arrow">↓</div>
+        <div style="font-size:10px; color:#78909c; text-align:center;">Phase Gate로 전달</div>
+      </div>
+
+      <!-- CENTER: Phase Gate -->
+      <div class="col-center">
+        <div class="gate-box">
+          <div class="gate-title">⚙ PHASE GATE</div>
+
+          <!-- FQ Gate -->
+          <div class="fq-section">
+            <div class="sec-title">🔴 FQ GATE — 결정론적 (rdflib)</div>
+            <div style="font-size:10px; color:#fca5a5; margin-bottom:4px;">7개 체크, CQ 1부터 전체 활성</div>
+            <div class="check-grid">
+              <span>PARSE</span>
+              <span>OBJPROP-DOMRANGE</span>
+              <span>DATPROP-XSD</span>
+              <span>CLASS-LABEL</span>
+              <span>PROP-LABEL</span>
+              <span>SUBCLASS-RESOURCE</span>
+              <span>NO-PROP-CONFLICT</span>
+              <span>NO-CLASS-CONFLICT</span>
+            </div>
+            <hr class="divider">
+            <div style="font-size:10px; margin-top:6px; line-height:1.8;">
+              <span class="fail-badge">FAIL</span>fired_ids → FQ_VIOLATION_GUIDANCE 매핑<br>
+              &nbsp;&nbsp;&nbsp;→ <span style="color:#fcd34d;">fq_learned_patterns 추가 <span class="new-badge">NEW</span></span><br>
+              &nbsp;&nbsp;&nbsp;→ LLM 재시도 (max_retries)<br>
+              <span class="pass-badge">PASS</span>DK GATE 진행
+            </div>
+          </div>
+
+          <!-- DK Gate -->
+          <div class="dk-section">
+            <div class="sec-title">🟢 DK GATE — LLM-assisted</div>
+            <div style="font-size:10px; color:#86efac; margin-bottom:6px;">
+              active_dk_rules vs δO<sub>i</sub> 검증
+            </div>
+            <div class="dk-steps">
+              <span class="fail-badge">FAIL</span>거부 → 재시도<br>
+              <span class="pass-badge">PASS</span>_extract_dk_rules() 호출<br>
+              <span style="margin-left:12px;">① LLM → 후보 규칙 0-2개 귀납</span><br>
+              <span style="margin-left:12px;">② TF-IDF → 교리 문서 검색 (top-2)</span><br>
+              <span style="margin-left:12px;">③ LLM → SUPPORTED? 2단계 검증</span><br>
+              <span style="margin-left:12px;">④ <span style="color:#fcd34d;">Min-Heap 저장 (max 10) <span class="new-badge">NEW</span></span></span><br>
+              <span style="margin-left:20px; color:#6ee7b7;">유사도 낮은 기존 항목 교체</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Retry indicator -->
+        <div class="retry-indicator">
+          ↩ 재시도 시 FQ Guide가 System Prompt에 포함되어 LLM이 같은 실수 반복 방지
+        </div>
+      </div>
+
+      <!-- RIGHT: Self-Improving Guides -->
+      <div class="col-right">
+        <div class="fq-guide-block">
+          <div class="guide-title">📘 FQ Guide</div>
+          <div class="guide-file">fq_guide_&lt;variant&gt;.md</div>
+          <div class="guide-content">
+            <strong style="color:#fbbf24;">결정론적 누적 (LLM 불필요)</strong><br><br>
+            FQ 위반 ID → 고정 가이드 문자열<br><br>
+            예시:<br>
+            • OBJPROP-DOMRANGE →<br>
+            &nbsp;"항상 rdfs:domain / rdfs:range 선언"<br>
+            • CLASS-LABEL →<br>
+            &nbsp;"모든 클래스에 rdfs:label 필수"<br>
+            • PARSE →<br>
+            &nbsp;"Turtle 문법 오류 확인"<br><br>
+            CQ마다 새 위반 추가<br>
+            중복 자동 제거
+          </div>
+        </div>
+
+        <div class="dk-guide-block">
+          <div class="guide-title">💜 DK Guide</div>
+          <div class="guide-file">dk_guide_&lt;variant&gt;.md</div>
+          <div class="guide-content">
+            <strong style="color:#a78bfa;">성공 케이스 누적 (max 10)</strong><br><br>
+            저장 단위 (압축 패턴):<br>
+            [citation]<br>
+            owl_pattern (rdflib 추출)<br>
+            cq_summary (60자)<br>
+          </div>
+          <div class="heap-diagram">
+            Min-Heap by similarity:<br>
+            slot[0]: sim=0.41 (최약)<br>
+            slot[1]: sim=0.67<br>
+            slot[2]: sim=0.89<br>
+            ⋮<br>
+            새 sim > slot[0].sim<br>
+            → slot[0] 교체
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Merge row -->
+    <div class="merge-row">
+      <div class="arrow">↓ PASS</div>
+      <div class="merge-block">
+        merge(accumulated_ttl, δO<sub>i</sub>) &nbsp;→&nbsp; HandoffArtifact 업데이트
+        <div class="merge-sub">
+          write <code>fq_guide_&lt;variant&gt;.md</code> &nbsp;&amp;&amp;&nbsp; <code>dk_guide_&lt;variant&gt;.md</code>
+          &nbsp;&nbsp;|&nbsp;&nbsp; rar_data 기록
+        </div>
+      </div>
+      <div class="arrow">↺ 다음 CQ</div>
+    </div>
+  </div>
+
+  <div class="arrow" style="padding:6px 0;">↓ 모든 CQ 완료</div>
+
+  <!-- ④ OUTPUTS -->
+  <div class="output-row">
+    <div class="output-block">🧠 Final Ontology<br><small>(TTL)</small></div>
+    <div class="output-block">📊 CCR / OC / SC<br><small>Quality Metrics</small></div>
+    <div class="output-block">⚙ GO &amp; RAR<br><small>Gate Overhead</small></div>
+    <div class="output-block">🔬 LLM Judge<br><small>4-dim Score</small></div>
+    <div class="output-block">🗂 ODP Coverage<br><small>Design Patterns</small></div>
+  </div>
+
+</div>
+</body>
+</html>
