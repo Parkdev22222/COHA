@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>COHA Framework Figure</title>
+<style>
+  body { margin: 30px; background: white; }
+</style>
+</head>
+<body>
+<svg width="960" height="630"
+     style="font-family: Arial, Helvetica, sans-serif;"
+     xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="arr" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 z" fill="#333"/>
+  </marker>
+  <marker id="arr-sm" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+    <path d="M0,0 L6,2.5 L0,5 z" fill="#555"/>
+  </marker>
+  <marker id="arr-dash" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+    <path d="M0,0 L6,2.5 L0,5 z" fill="#888"/>
+  </marker>
+</defs>
+
+<!-- ═══════════════════════════════════════════════════════════
+     BACKGROUND SECTIONS
+═══════════════════════════════════════════════════════════ -->
+
+<!-- Step 1 section -->
+<rect x="10" y="38" width="670" height="548" rx="6" fill="#efefef" stroke="#b0b0b0" stroke-width="1"/>
+<text x="345" y="57" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#111">
+  Step 1  Ontology Generation
+</text>
+
+<!-- Step 2 section -->
+<rect x="690" y="38" width="262" height="548" rx="6" fill="#efefef" stroke="#b0b0b0" stroke-width="1"/>
+<text x="821" y="57" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#111">
+  Step 2  Evaluation
+</text>
+
+<!-- Loop dashed boundary -->
+<rect x="15" y="65" width="660" height="515" rx="4"
+      fill="none" stroke="#aaa" stroke-width="0.8" stroke-dasharray="6,3"/>
+<text x="83" y="80" text-anchor="middle" font-size="8.5" fill="#777" font-style="italic">
+  for each CQ  i = 1 … N
+</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     COLUMN A — INPUTS
+═══════════════════════════════════════════════════════════ -->
+
+<!-- CQs -->
+<rect x="22" y="105" width="80" height="34" rx="2" fill="white" stroke="#444" stroke-width="0.9"/>
+<text x="62" y="120" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">CQs</text>
+<text x="62" y="132" text-anchor="middle" font-size="7.5" fill="#555">(N questions)</text>
+
+<!-- User Story -->
+<rect x="22" y="151" width="80" height="34" rx="2" fill="white" stroke="#444" stroke-width="0.9"/>
+<text x="62" y="166" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">User Story</text>
+<text x="62" y="178" text-anchor="middle" font-size="7.5" fill="#555">domain context</text>
+
+<!-- Domain Docs -->
+<rect x="22" y="197" width="80" height="34" rx="2" fill="white" stroke="#444" stroke-width="0.9"/>
+<text x="62" y="210" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">Domain Docs</text>
+<text x="62" y="222" text-anchor="middle" font-size="7.5" fill="#555">ADP / FM doctrine</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     COLUMN B — HANDOFF ARTIFACT
+═══════════════════════════════════════════════════════════ -->
+
+<rect x="118" y="88" width="128" height="322" rx="3"
+      fill="white" stroke="#555" stroke-width="1.1" stroke-dasharray="5,3"/>
+<text x="182" y="105" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#111">
+  Handoff Artifact
+</text>
+<line x1="122" y1="110" x2="242" y2="110" stroke="#ccc" stroke-width="0.8"/>
+
+<text x="127" y="126" font-size="8" fill="#333">• accumulated TTL</text>
+<text x="127" y="140" font-size="8" fill="#333">• FQ rules (7, static)</text>
+<text x="127" y="154" font-size="8" fill="#333">• DK rules (accumulated)</text>
+<text x="127" y="168" font-size="8" fill="#333">• completed CQs</text>
+<text x="127" y="182" font-size="8" fill="#333">• coverage gaps</text>
+
+<line x1="122" y1="190" x2="242" y2="190" stroke="#ddd" stroke-width="0.7" stroke-dasharray="3,2"/>
+<text x="127" y="204" font-size="7.5" fill="#666" font-style="italic">Self-improving (★ new):</text>
+
+<text x="127" y="220" font-size="8" fill="#222">★ FQ learned patterns</text>
+<text x="134" y="232" font-size="7.5" fill="#555">OWL gen. guidance</text>
+<text x="134" y="244" font-size="7.5" fill="#555">from past FQ failures</text>
+<text x="134" y="256" font-size="7.5" fill="#555">(deterministic map)</text>
+
+<line x1="122" y1="264" x2="242" y2="264" stroke="#ddd" stroke-width="0.7" stroke-dasharray="3,2"/>
+
+<text x="127" y="278" font-size="8" fill="#222">★ DK success patterns</text>
+<text x="134" y="290" font-size="7.5" fill="#555">doctrine-grounded</text>
+<text x="134" y="302" font-size="7.5" fill="#555">compressed OWL pat.</text>
+<text x="134" y="314" font-size="7.5" fill="#555">min-heap (max 10)</text>
+<text x="134" y="326" font-size="7.5" fill="#555">evict by doc. sim. ↓</text>
+<text x="134" y="338" font-size="7.5" fill="#555">variant-specific .md</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     COLUMN C — LLM GENERATION
+═══════════════════════════════════════════════════════════ -->
+
+<text x="275" y="152" text-anchor="middle" font-size="7.5" fill="#666" font-style="italic">System Prompt</text>
+<text x="275" y="163" text-anchor="middle" font-size="7.5" fill="#666" font-style="italic">injection</text>
+
+<rect x="252" y="168" width="90" height="46" rx="2" fill="#e2e2e2" stroke="#444" stroke-width="1"/>
+<text x="297" y="188" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#111">LLM</text>
+<text x="297" y="202" text-anchor="middle" font-size="7.5" fill="#444">Context Reset</text>
+<text x="297" y="214" text-anchor="middle" font-size="7.5" fill="#444">per CQ</text>
+
+<text x="340" y="183" text-anchor="middle" font-size="8" fill="#555" font-style="italic">δO</text>
+<text x="347" y="186" font-size="6.5" fill="#555" font-style="italic">i</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     COLUMN D — PHASE GATE
+═══════════════════════════════════════════════════════════ -->
+
+<!-- Outer dashed Phase Gate box -->
+<rect x="360" y="88" width="205" height="442" rx="3"
+      fill="white" stroke="#444" stroke-width="1.1" stroke-dasharray="5,3"/>
+<text x="463" y="105" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#111">
+  Phase Gate
+</text>
+<line x1="364" y1="110" x2="561" y2="110" stroke="#ccc" stroke-width="0.8"/>
+
+<!-- FQ Gate inner -->
+<rect x="368" y="116" width="188" height="166" rx="2" fill="#f6f6f6" stroke="#666" stroke-width="0.8"/>
+<text x="462" y="131" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#111">
+  FQ Gate  (rdflib, deterministic)
+</text>
+<line x1="371" y1="135" x2="553" y2="135" stroke="#ccc" stroke-width="0.6"/>
+<text x="376" y="148" font-size="7.5" fill="#333">① FQ-PARSE</text>
+<text x="376" y="159" font-size="7.5" fill="#333">② OBJPROP-DOMRANGE</text>
+<text x="376" y="170" font-size="7.5" fill="#333">③ DATPROP-XSD-RANGE</text>
+<text x="376" y="181" font-size="7.5" fill="#333">④ CLASS-LABEL</text>
+<text x="376" y="192" font-size="7.5" fill="#333">⑤ PROP-LABEL</text>
+<text x="376" y="203" font-size="7.5" fill="#333">⑥ SUBCLASS-RESOURCE</text>
+<text x="376" y="214" font-size="7.5" fill="#333">⑦ NO-PROP-TYPE-CONFLICT</text>
+<line x1="371" y1="221" x2="553" y2="221" stroke="#ddd" stroke-width="0.5" stroke-dasharray="3,2"/>
+<text x="376" y="233" font-size="7" fill="#666" font-style="italic">FAIL → fired_ids → FQ Guide update ★</text>
+<text x="376" y="244" font-size="7" fill="#666" font-style="italic">      → LLM retry  (max_retries)</text>
+<text x="376" y="255" font-size="7" fill="#666" font-style="italic">PASS → DK Gate ↓</text>
+<text x="376" y="275" font-size="7" fill="#888" font-style="italic">All 7 checks active from CQ 1</text>
+
+<!-- DK Gate inner -->
+<rect x="368" y="292" width="188" height="224" rx="2" fill="#f6f6f6" stroke="#666" stroke-width="0.8"/>
+<text x="462" y="307" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#111">
+  DK Gate  (LLM-assisted)
+</text>
+<line x1="371" y1="311" x2="553" y2="311" stroke="#ccc" stroke-width="0.6"/>
+<text x="376" y="324" font-size="7.5" fill="#333">Check δOᵢ vs. active DK rules</text>
+<line x1="371" y1="331" x2="553" y2="331" stroke="#ddd" stroke-width="0.5" stroke-dasharray="3,2"/>
+<text x="376" y="344" font-size="7.5" fill="#333">① LLM induces candidate rules (0–2)</text>
+<text x="376" y="356" font-size="7.5" fill="#333">② TF-IDF retrieval from doctrine (top-2)</text>
+<text x="376" y="368" font-size="7.5" fill="#333">③ LLM grounding: SUPPORTED?</text>
+<text x="385" y="380" font-size="7.5" fill="#333">→ accept with citation</text>
+<text x="376" y="392" font-size="7.5" fill="#333">④ Min-heap eviction (sim ↑, max 10) ★</text>
+<text x="385" y="404" font-size="7.5" fill="#333">→ compress OWL pattern (rdflib)</text>
+<text x="385" y="416" font-size="7.5" fill="#333">→ write dk_guide_&lt;variant&gt;.md ★</text>
+<line x1="371" y1="424" x2="553" y2="424" stroke="#ddd" stroke-width="0.5" stroke-dasharray="3,2"/>
+<text x="376" y="437" font-size="7" fill="#666" font-style="italic">FAIL → reject, retry</text>
+<text x="376" y="449" font-size="7" fill="#666" font-style="italic">PASS → merge δOᵢ into accumulated TTL</text>
+<text x="376" y="461" font-size="7" fill="#666" font-style="italic">      → write fq_guide_&lt;variant&gt;.md ★</text>
+<text x="376" y="473" font-size="7" fill="#666" font-style="italic">      → update Handoff Artifact</text>
+<text x="376" y="490" font-size="7" fill="#888" font-style="italic">CQ 1: dk_rules = [] → bootstrap induction</text>
+<text x="376" y="502" font-size="7" fill="#888" font-style="italic">CQ 2+: use accumulated active DK rules</text>
+<text x="376" y="514" font-size="7" fill="#888" font-style="italic">[COMPL] rules checked at end; [STRUCT] per-CQ</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     COLUMN E — SELF-IMPROVING GUIDES
+═══════════════════════════════════════════════════════════ -->
+
+<!-- FQ Guide -->
+<rect x="577" y="116" width="98" height="108" rx="2"
+      fill="white" stroke="#555" stroke-width="0.9" stroke-dasharray="4,2"/>
+<text x="626" y="131" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#111">FQ Guide ★</text>
+<text x="626" y="143" text-anchor="middle" font-size="7" fill="#666" font-style="italic">fq_guide_&lt;variant&gt;.md</text>
+<line x1="580" y1="147" x2="672" y2="147" stroke="#ddd" stroke-width="0.6"/>
+<text x="583" y="159" font-size="7" fill="#444">Deterministic mapping</text>
+<text x="583" y="170" font-size="7" fill="#444">FQ violation ID →</text>
+<text x="583" y="181" font-size="7" fill="#444">guidance string</text>
+<text x="583" y="192" font-size="7" fill="#444">No LLM needed</text>
+<text x="583" y="203" font-size="7" fill="#444">CQ-by-CQ append</text>
+<text x="583" y="214" font-size="7" fill="#444">dedup, carry forward</text>
+
+<!-- DK Guide -->
+<rect x="577" y="292" width="98" height="126" rx="2"
+      fill="white" stroke="#555" stroke-width="0.9" stroke-dasharray="4,2"/>
+<text x="626" y="307" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#111">DK Guide ★</text>
+<text x="626" y="319" text-anchor="middle" font-size="7" fill="#666" font-style="italic">dk_guide_&lt;variant&gt;.md</text>
+<line x1="580" y1="323" x2="672" y2="323" stroke="#ddd" stroke-width="0.6"/>
+<text x="583" y="335" font-size="7" fill="#444">Success cases (max 10)</text>
+<text x="583" y="346" font-size="7" fill="#444">Min-heap by doc. sim.</text>
+<text x="583" y="357" font-size="7" fill="#444">Evict weakest if</text>
+<text x="583" y="368" font-size="7" fill="#444">new sim. strictly ↑</text>
+<line x1="580" y1="375" x2="672" y2="375" stroke="#ddd" stroke-width="0.5" stroke-dasharray="2,2"/>
+<text x="583" y="387" font-size="7" fill="#444">Stored per entry:</text>
+<text x="583" y="398" font-size="7" fill="#444">[citation] + OWL pat.</text>
+<text x="583" y="409" font-size="7" fill="#444">+ cq_summary (60 ch.)</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     ARROWS — MAIN FLOW
+═══════════════════════════════════════════════════════════ -->
+
+<!-- CQs → Handoff -->
+<line x1="102" y1="122" x2="116" y2="148" stroke="#333" stroke-width="1.1" marker-end="url(#arr)"/>
+<!-- Story → Handoff -->
+<line x1="102" y1="168" x2="116" y2="195" stroke="#333" stroke-width="1.1" marker-end="url(#arr)"/>
+<!-- Docs → Handoff -->
+<line x1="102" y1="214" x2="116" y2="240" stroke="#333" stroke-width="1.1" marker-end="url(#arr)"/>
+
+<!-- Handoff → LLM (System Prompt) -->
+<line x1="246" y1="210" x2="250" y2="195" stroke="#333" stroke-width="1.1" marker-end="url(#arr)"/>
+
+<!-- LLM → Phase Gate (δOᵢ) -->
+<line x1="342" y1="191" x2="358" y2="196" stroke="#333" stroke-width="1.3" marker-end="url(#arr)"/>
+
+<!-- FQ Gate → FQ Guide (FAIL) -->
+<line x1="556" y1="185" x2="575" y2="170" stroke="#444" stroke-width="0.9" marker-end="url(#arr-sm)"/>
+<text x="558" y="173" font-size="7" fill="#555" font-style="italic">FAIL</text>
+
+<!-- DK Gate → DK Guide (PASS) -->
+<line x1="556" y1="354" x2="575" y2="342" stroke="#444" stroke-width="0.9" marker-end="url(#arr-sm)"/>
+<text x="558" y="344" font-size="7" fill="#555" font-style="italic">PASS</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     FEEDBACK ARROWS (GUIDES → HANDOFF)
+     Route: along TOP margin for FQ Guide, along BOTTOM for DK Guide
+═══════════════════════════════════════════════════════════ -->
+
+<!-- FQ Guide → Handoff  (elbow: up → left → down into Handoff top) -->
+<path d="M 626,116 L 626,47 L 182,47 L 182,88"
+      fill="none" stroke="#888" stroke-width="0.9" stroke-dasharray="5,3"
+      marker-end="url(#arr-dash)"/>
+<text x="400" y="43" text-anchor="middle" font-size="7" fill="#888" font-style="italic">
+  FQ guidance update →
+</text>
+
+<!-- DK Guide → Handoff  (elbow: down → left → up into Handoff bottom) -->
+<path d="M 626,418 L 626,490 L 182,490 L 182,410"
+      fill="none" stroke="#888" stroke-width="0.9" stroke-dasharray="5,3"
+      marker-end="url(#arr-dash)"/>
+<text x="400" y="504" text-anchor="middle" font-size="7" fill="#888" font-style="italic">
+  DK pattern update →
+</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MERGE + LOOP ARROW
+═══════════════════════════════════════════════════════════ -->
+
+<!-- DK Gate PASS → merge (downward, inside Phase Gate) -->
+<line x1="462" y1="528" x2="462" y2="548"
+      stroke="#333" stroke-width="1.1" marker-end="url(#arr)"/>
+
+<!-- Merge box -->
+<rect x="360" y="548" width="205" height="32" rx="2" fill="#e2e2e2" stroke="#444" stroke-width="1"/>
+<text x="463" y="562" text-anchor="middle" font-size="8.5" fill="#222">
+  merge(accumulated TTL,  δO
+</text>
+<text x="617" y="565" font-size="7" fill="#222">i</text>
+<text x="622" y="562" font-size="8.5" fill="#222">)</text>
+<text x="463" y="574" text-anchor="middle" font-size="7.5" fill="#555">
+  → update Handoff Artifact  →  next CQ
+</text>
+
+<!-- Loop arrow: Merge left → Handoff left side (along bottom) -->
+<path d="M 360,564 L 182,564 L 182,530"
+      fill="none" stroke="#555" stroke-width="1" stroke-dasharray="5,3"
+      marker-end="url(#arr-dash)"/>
+<text x="268" y="576" text-anchor="middle" font-size="7" fill="#777" font-style="italic">
+  i = i + 1
+</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     CROSS-STEP ARROW: Final TTL → Step 2
+     Route: Merge right edge → gap → Final Ontology
+═══════════════════════════════════════════════════════════ -->
+<path d="M 565,564 L 680,564 L 680,124 L 688,124"
+      fill="none" stroke="#333" stroke-width="1.2"
+      marker-end="url(#arr)"/>
+<text x="672" y="555" text-anchor="end" font-size="7" fill="#555" font-style="italic">
+  Final TTL
+</text>
+<text x="672" y="565" text-anchor="end" font-size="7" fill="#555" font-style="italic">
+  (all CQs done)
+</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     STEP 2 — EVALUATION
+═══════════════════════════════════════════════════════════ -->
+
+<!-- Final Ontology box -->
+<rect x="700" y="98" width="88" height="50" rx="2" fill="#e2e2e2" stroke="#444" stroke-width="1.1"/>
+<text x="744" y="118" text-anchor="middle" font-size="9" font-weight="bold" fill="#111">Final</text>
+<text x="744" y="131" text-anchor="middle" font-size="9" font-weight="bold" fill="#111">Ontology</text>
+<text x="744" y="143" text-anchor="middle" font-size="7" fill="#555">(Turtle TTL)</text>
+
+<!-- Metric boxes — arrows from Final Ontology right edge (788) to each metric left edge (806) -->
+<!-- CCR -->
+<rect x="810" y="73" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="91" text-anchor="middle" font-size="8" fill="#222">CCR ↑  (LLM judge)</text>
+<!-- SPARQL-CCR -->
+<rect x="810" y="105" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="123" text-anchor="middle" font-size="8" fill="#222">SPARQL-CCR ↑</text>
+<!-- OC -->
+<rect x="810" y="137" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="155" text-anchor="middle" font-size="8" fill="#222">OC ↑  (consistency)</text>
+<!-- SC -->
+<rect x="810" y="169" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="187" text-anchor="middle" font-size="8" fill="#222">SC ↑  (fuzzy / exact)</text>
+<!-- GO -->
+<rect x="810" y="201" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="219" text-anchor="middle" font-size="8" fill="#222">GO ↓  (gate overhead)</text>
+<!-- LLM Judge -->
+<rect x="810" y="233" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="251" text-anchor="middle" font-size="8" fill="#222">LLM Judge ↑  (4-dim)</text>
+<!-- RAR -->
+<rect x="810" y="265" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="283" text-anchor="middle" font-size="8" fill="#222">RAR  (rule accum. rate)</text>
+<!-- ODP -->
+<rect x="810" y="297" width="128" height="26" rx="2" fill="white" stroke="#555" stroke-width="0.8"/>
+<text x="874" y="315" text-anchor="middle" font-size="8" fill="#222">ODP Coverage ↑</text>
+<!-- Overall -->
+<rect x="810" y="329" width="128" height="26" rx="2" fill="#e2e2e2" stroke="#444" stroke-width="1"/>
+<text x="874" y="347" text-anchor="middle" font-size="8" font-weight="bold" fill="#111">Overall Score ↑</text>
+
+<!-- Ablation note -->
+<rect x="700" y="380" width="238" height="88" rx="2" fill="white" stroke="#aaa" stroke-width="0.8" stroke-dasharray="4,2"/>
+<text x="819" y="395" text-anchor="middle" font-size="8" font-weight="bold" fill="#333">Ablation Variants</text>
+<line x1="703" y1="399" x2="935" y2="399" stroke="#ddd" stroke-width="0.6"/>
+<text x="706" y="412" font-size="7.5" fill="#444">B1  Vanilla-CQbyCQ (no gate)</text>
+<text x="706" y="424" font-size="7.5" fill="#444">B2  Static-Gate (fixed FQ, no DK)</text>
+<text x="706" y="436" font-size="7.5" fill="#444">C1  COHA-no-FQ  (DK only)</text>
+<text x="706" y="448" font-size="7.5" fill="#444">C2  COHA-no-DK  (FQ only)</text>
+<text x="706" y="460" font-size="7.5" fill="#444">C3  COHA-full  (FQ + DK + guides ★)</text>
+
+<!-- Arrows from Final Ontology → metrics (fan out) -->
+<line x1="788" y1="112" x2="808" y2="86"  stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="118" x2="808" y2="118" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="124" x2="808" y2="150" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="128" x2="808" y2="182" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="132" x2="808" y2="214" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="136" x2="808" y2="246" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="140" x2="808" y2="278" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="144" x2="808" y2="310" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+<line x1="788" y1="148" x2="808" y2="342" stroke="#555" stroke-width="0.8" marker-end="url(#arr-sm)"/>
+
+<!-- ═══════════════════════════════════════════════════════════
+     ANNOTATION LABELS ON MAIN FLOW ARROWS
+═══════════════════════════════════════════════════════════ -->
+<text x="344" y="187" font-size="7.5" fill="#555" font-style="italic">δO</text>
+<text x="352" y="190" font-size="6" fill="#555" font-style="italic">i</text>
+
+<!-- ═══════════════════════════════════════════════════════════
+     CAPTION
+═══════════════════════════════════════════════════════════ -->
+<text x="480" y="610" text-anchor="middle" font-size="8.5" fill="#222">
+  Fig. 1. Overview of the COHA (CQ-Driven Ontology Harness with Self-Improving Phase Gate) framework.
+</text>
+<text x="480" y="623" text-anchor="middle" font-size="8.5" fill="#222">
+  ★ denotes components introduced by the self-improving mechanism (FQ guide accumulation and DK min-heap eviction).
+</text>
+
+</svg>
+</body>
+</html>
