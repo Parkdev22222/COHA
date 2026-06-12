@@ -40,8 +40,14 @@ class VanillaCQbyCQ:
                     logger.warning(f"CQ {i+1} attempt {attempt+1} failed: {e}")
             total_ms = (time.time() - t_start) * 1000
             total_times.append(total_ms)
-            if delta_oi:
+            # Only merge if delta contains actual OWL declarations.
+            # Without this guard, non-Turtle responses (e.g. "No new axioms needed.")
+            # accumulate as garbage text, poisoning subsequent prompts — the core
+            # failure mode that Context Reset prevents.
+            if delta_oi and ("owl:" in delta_oi or "rdfs:" in delta_oi):
                 accumulated_ttl = merge_ontologies(accumulated_ttl, delta_oi)
+            elif delta_oi:
+                logger.warning(f"CQ {i+1}: delta contains no OWL declarations, skipping merge.")
 
         return {
             "ontology_ttl": accumulated_ttl,
