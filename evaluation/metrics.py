@@ -527,7 +527,10 @@ def compute_llm_judge_detailed(cqs: list, ontology_ttl: str, llm_client) -> dict
                 raw = raw[raw.find("{"):raw.rfind("}") + 1]
             parsed = _json.loads(raw)
             for dim in ("answerability", "completeness", "precision", "domain_validity"):
-                val = int(parsed.get(dim, 0))
+                try:
+                    val = int(parsed.get(dim, 0))
+                except (ValueError, TypeError):
+                    val = 0
                 entry[dim] = val
                 score_sums[dim] += val
             entry["verdict"] = parsed.get("verdict", "fail")

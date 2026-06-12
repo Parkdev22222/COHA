@@ -181,7 +181,7 @@ class SelfImprovingPhaseGate:
     def _validate_formal_deterministic(self, delta_oi: str, active_fq_rules: List[str]):
         """Deterministic FQ validation via rdflib (paper §3.2.2 Step 1).
 
-        Returns (fq_violations, new_fq_rules).
+        Returns (fq_violations, new_fq_rules, fired_check_ids).
 
         Semantics:
           - static / no-accumulate mode (initial_fq_rules set, fq_accumulate=False):

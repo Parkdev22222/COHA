@@ -31,14 +31,18 @@ logger = logging.getLogger(__name__)
 MAX_DK_PATTERNS = 10  # max doctrine-grounded success cases kept in guide (min-heap eviction)
 
 
-def _write_guides(handoff: "HandoffArtifact", guides_dir: str) -> None:
-    """Write FQ and DK guides to Markdown files (called after each CQ update)."""
+def _write_guides(handoff: "HandoffArtifact", guides_dir: str, variant: str = "") -> None:
+    """Write FQ and DK guides to Markdown files (called after each CQ update).
+
+    Each variant writes to its own file (fq_guide_<variant>.md) so ablation study
+    runs don't overwrite each other.
+    """
     try:
         from coha.guide_writer import write_fq_guide, write_dk_guide
         if handoff.fq_learned_patterns:
-            write_fq_guide(handoff.fq_learned_patterns, handoff.iteration, guides_dir)
+            write_fq_guide(handoff.fq_learned_patterns, handoff.iteration, guides_dir, variant)
         if handoff.dk_success_patterns:
-            write_dk_guide(handoff.dk_success_patterns, handoff.iteration, guides_dir)
+            write_dk_guide(handoff.dk_success_patterns, handoff.iteration, guides_dir, variant)
     except Exception as e:
         logger.warning(f"Guide write failed (non-fatal): {e}")
 
@@ -242,7 +246,7 @@ class COHAHarness:
                     fq_learned_patterns=new_fq_patterns,
                     dk_success_patterns=new_dk_pats,
                 )
-                _write_guides(handoff, guides_dir)
+                _write_guides(handoff, guides_dir, self.config.name)
                 continue
 
             # Merge into accumulated ontology

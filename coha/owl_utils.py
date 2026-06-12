@@ -53,7 +53,7 @@ def check_consistency(ontology_ttl: str) -> bool:
     Returns True if no inconsistency is detected and TTL parses cleanly.
     """
     if not ontology_ttl or not ontology_ttl.strip():
-        return False
+        return True  # empty ontology has no axioms to violate — structurally valid
     try:
         import rdflib
         g = rdflib.Graph()

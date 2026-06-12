@@ -6,13 +6,20 @@ FQ guide  — lessons learned from gate failures (patterns to avoid)
 DK guide  — doctrine-grounded success cases (patterns to reuse)
 """
 import os
+import re
 from typing import List
 
 
-def write_fq_guide(patterns: List[str], iteration: int, output_dir: str) -> str:
+def _safe(name: str) -> str:
+    """Convert variant name to a filesystem-safe string (alphanumeric + underscore only)."""
+    return re.sub(r"[^a-zA-Z0-9]", "_", name).lower()
+
+
+def write_fq_guide(patterns: List[str], iteration: int, output_dir: str, variant: str = "") -> str:
     """Write FQ OWL generation guide. Returns path written."""
     os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "fq_guide.md")
+    fname = f"fq_guide_{_safe(variant)}.md" if variant else "fq_guide.md"
+    path = os.path.join(output_dir, fname)
     lines = [
         "# FQ OWL Generation Guide",
         f"*Last updated: CQ {iteration} — {len(patterns)} pattern(s) learned from gate failures*",
@@ -33,10 +40,11 @@ def write_fq_guide(patterns: List[str], iteration: int, output_dir: str) -> str:
     return path
 
 
-def write_dk_guide(patterns: List[dict], iteration: int, output_dir: str) -> str:
+def write_dk_guide(patterns: List[dict], iteration: int, output_dir: str, variant: str = "") -> str:
     """Write DK doctrine-grounded success patterns guide. Returns path written."""
     os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "dk_guide.md")
+    fname = f"dk_guide_{_safe(variant)}.md" if variant else "dk_guide.md"
+    path = os.path.join(output_dir, fname)
     sorted_pats = sorted(patterns, key=lambda p: p.get("similarity", 0.0), reverse=True)
     lines = [
         "# DK Doctrine-Grounded Success Patterns",
