@@ -149,11 +149,12 @@ class SelfImprovingPhaseGate:
           - static / no-accumulate mode (initial_fq_rules set, fq_accumulate=False):
                 run the fixed catalog; ALL violations are hard failures.
           - accumulate mode (fq_accumulate=True):
-                the *active* check set grows over CQs. A check already active
-                produces hard violations. A check that fires for the FIRST time is
-                ACTIVATED (added to new_fq_rules) but does NOT block this delta —
-                this first observation is the inductive "learning" moment, yielding
-                the self-improving curve (RAR).
+                ALL 7 checks run from CQ 1 — every violation is a hard failure.
+                Concrete violation messages (e.g. "ObjectProperty :X is missing rdfs:domain")
+                are returned in fq_violations and fed back to the LLM on retry via
+                _violation_hint(). First-time violations are ALSO added to new_fq_rules
+                (for RAR curve tracking), but they do not get a "free pass" — the gate
+                rejects immediately so the LLM can self-correct with precise feedback.
           - disabled (no active rules, no accumulate): no FQ checks run.
         """
         from coha.fq_checker import run_checks, ALL_CHECK_IDS, FQ_CHECKS, describe
@@ -168,18 +169,17 @@ class SelfImprovingPhaseGate:
             violations = [m for msgs in fired.values() for m in msgs]
             return violations, []
 
-        # Accumulate mode: run the full catalog, split into active vs newly-learned.
+        # Accumulate mode: run the full catalog. ALL violations block immediately.
+        # Track first-time check firings for RAR curve (added to new_fq_rules).
         active_ids = set(self._fq_rule_to_check_id(r) for r in active_fq_rules)
         fired = run_checks(delta_oi, ALL_CHECK_IDS)
 
         hard_violations = []
         newly_learned = []
         for cid, msgs in fired.items():
-            if cid in active_ids:
-                hard_violations.extend(msgs)
-            else:
-                # First time we see this violation type: learn the rule, don't block now.
-                newly_learned.append(describe(cid))
+            hard_violations.extend(msgs)  # every violation blocks immediately
+            if cid not in active_ids:
+                newly_learned.append(describe(cid))  # first observation → RAR curve
         return hard_violations, newly_learned
 
     def _validate_domain(self, delta_oi: str, dk_rules: List[str]) -> List[str]:
