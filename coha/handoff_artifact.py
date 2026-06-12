@@ -2,13 +2,15 @@
 Handoff Artifact: structured knowledge transfer across context resets.
 
 Schema from COHA paper (§3.3):
-  iteration            : int
-  completed_cqs        : list[str]
-  accumulated_ontology : AccumulatedOntology (classes, properties, axioms, consistency, ttl)
-  formal_quality_rules : list[str]
-  domain_knowledge_rules: list[str]
-  next_cq              : str
-  coverage_gaps        : list[str]
+  iteration              : int
+  completed_cqs          : list[str]
+  accumulated_ontology   : AccumulatedOntology (classes, properties, axioms, consistency, ttl)
+  formal_quality_rules   : list[str]
+  domain_knowledge_rules : list[str]
+  next_cq                : str
+  coverage_gaps          : list[str]
+  fq_learned_patterns    : list[str]   — guidance strings learned from past FQ gate failures
+  dk_success_patterns    : list[dict]  — doctrine-grounded OWL patterns from past CQ successes
 """
 import json
 from dataclasses import dataclass, field
@@ -43,6 +45,8 @@ class HandoffArtifact:
     domain_knowledge_rules: List[str] = field(default_factory=list)
     next_cq: str = ""
     coverage_gaps: List[str] = field(default_factory=list)
+    fq_learned_patterns: List[str] = field(default_factory=list)
+    dk_success_patterns: List[dict] = field(default_factory=list)
 
     @classmethod
     def initial(cls) -> "HandoffArtifact":
@@ -62,6 +66,8 @@ class HandoffArtifact:
             "domain_knowledge_rules": self.domain_knowledge_rules,
             "next_cq": self.next_cq,
             "coverage_gaps": self.coverage_gaps,
+            "fq_learned_patterns": self.fq_learned_patterns,
+            "dk_success_patterns": self.dk_success_patterns,
         }
 
     def to_prompt_text(self) -> str:
@@ -94,6 +100,17 @@ class HandoffArtifact:
                     parts.append(f"- {r}")
         if self.coverage_gaps:
             parts.append(f"\nCoverage Gaps: {', '.join(self.coverage_gaps[:5])}")
+        if self.fq_learned_patterns:
+            parts.append(f"\n=== OWL Generation Guidelines ({len(self.fq_learned_patterns)}) — learned from past FQ failures ===")
+            for p in self.fq_learned_patterns:
+                parts.append(f"- {p}")
+        if self.dk_success_patterns:
+            parts.append(f"\n=== Doctrine-Grounded Reference Patterns ({len(self.dk_success_patterns)}) ===")
+            for p in self.dk_success_patterns:
+                src = p.get("citation", "?")
+                pat = p.get("owl_pattern", "?")
+                cq_s = p.get("cq_summary", "")[:60]
+                parts.append(f"- [{src}] {pat}  ← ref: {cq_s}")
         return "\n".join(parts)
 
     def to_json(self) -> str:

@@ -10,6 +10,7 @@ Supports all experimental conditions:
   - Vanilla         : context_reset=F, no gate at all
   - COHA+Ontogenia  : context_reset=T, fq=T, dk=T, metacognitive generation + ODP injection
 """
+import os
 import time
 import logging
 from dataclasses import dataclass, field
@@ -26,6 +27,38 @@ from coha.owl_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+MAX_DK_PATTERNS = 10  # max doctrine-grounded success cases kept in guide (min-heap eviction)
+
+
+def _write_guides(handoff: "HandoffArtifact", guides_dir: str) -> None:
+    """Write FQ and DK guides to Markdown files (called after each CQ update)."""
+    try:
+        from coha.guide_writer import write_fq_guide, write_dk_guide
+        if handoff.fq_learned_patterns:
+            write_fq_guide(handoff.fq_learned_patterns, handoff.iteration, guides_dir)
+        if handoff.dk_success_patterns:
+            write_dk_guide(handoff.dk_success_patterns, handoff.iteration, guides_dir)
+    except Exception as e:
+        logger.warning(f"Guide write failed (non-fatal): {e}")
+
+
+def _update_dk_patterns(existing: List[dict], new_patterns: List[dict]) -> List[dict]:
+    """Insert new DK success patterns using min-heap eviction by doctrine similarity.
+
+    Keeps at most MAX_DK_PATTERNS entries. A new entry replaces the weakest existing
+    entry only if its similarity score is strictly higher — ensuring the guide always
+    contains the best-grounded cases seen so far.
+    """
+    result = list(existing)
+    for pat in new_patterns:
+        if len(result) < MAX_DK_PATTERNS:
+            result.append(pat)
+        else:
+            min_idx = min(range(len(result)), key=lambda i: result[i].get("similarity", 0.0))
+            if pat.get("similarity", 0.0) > result[min_idx].get("similarity", 0.0):
+                result[min_idx] = pat
+    return result
 
 
 @dataclass
@@ -94,6 +127,13 @@ class COHAHarness:
         if hasattr(self.llm_client, "reset_stats"):
             self.llm_client.reset_stats()
 
+        # Guide output directory — written after every CQ that updates a guide
+        try:
+            from config import RESULTS_DIR
+            guides_dir = os.path.join(RESULTS_DIR, "guides")
+        except Exception:
+            guides_dir = os.path.join(os.path.dirname(__file__), "..", "results", "guides")
+
         handoff = HandoffArtifact.initial()
         accumulated_ttl = ""  # only used for vanilla (no-reset)
         qic_data = []   # [(cq_index, cq_text, ccr_so_far)]
@@ -114,7 +154,8 @@ class COHAHarness:
             delta_oi = None
             gate_result = None
             succeeded = False
-            prev_violations = []  # violations from previous attempt, fed back to generator
+            prev_violations = []   # violations from previous attempt, fed back to generator
+            collected_fq_guidance = []  # FQ guidance accumulated across retry attempts
 
             for attempt in range(self.config.max_retries):
                 if attempt > 0:
@@ -149,8 +190,12 @@ class COHAHarness:
                 )
 
                 if has_gate:
-                    gate_result = self.phase_gate.process(delta_oi, handoff, cq_text)
+                    gate_result = self.phase_gate.process(
+                        delta_oi, handoff, cq_text, cq_index=i + 1
+                    )
                     gate_times.append(gate_result.latency_ms)
+                    # Collect FQ guidance from every attempt (including the last)
+                    collected_fq_guidance.extend(gate_result.new_fq_guidance)
                     if gate_result.passed or attempt == self.config.max_retries - 1:
                         succeeded = gate_result.passed
                         break
@@ -176,21 +221,28 @@ class COHAHarness:
                 # QIC: gate rejected — quality stays at current accumulated level
                 current_classes = len(handoff.accumulated_ontology.classes)
                 qic_data.append((i + 1, cq_text, current_classes))
-                # Only update FQ rules from rejected delta (structural lessons still valid).
-                # Do NOT update DK rules from rejected delta — bad domain axioms corrupt future rules.
+                # FQ rules: update (structural lessons are always valid, even from bad delta).
+                # FQ guidance: update (failure messages are exactly what we want to learn from).
+                # DK rules/patterns: do NOT update — bad domain axioms corrupt future rules.
                 new_fq = list(dict.fromkeys(handoff.formal_quality_rules + gate_result.new_fq_rules))
+                new_fq_patterns = list(dict.fromkeys(handoff.fq_learned_patterns + collected_fq_guidance))
                 new_dk = list(handoff.domain_knowledge_rules)
+                new_dk_pats = list(handoff.dk_success_patterns)
+                next_cq = cqs[i + 1] if i + 1 < len(cqs) else ""
+                if isinstance(next_cq, dict):
+                    next_cq = next_cq.get("question", "")
                 handoff = HandoffArtifact(
                     iteration=i + 1,
                     completed_cqs=handoff.completed_cqs + [cq_text],
                     accumulated_ontology=handoff.accumulated_ontology,
                     formal_quality_rules=new_fq,
                     domain_knowledge_rules=new_dk,
-                    next_cq=cqs[i + 1] if i + 1 < len(cqs) else "",
+                    next_cq=next_cq,
                     coverage_gaps=[],
+                    fq_learned_patterns=new_fq_patterns,
+                    dk_success_patterns=new_dk_pats,
                 )
-                if isinstance(handoff.next_cq, dict):
-                    handoff.next_cq = handoff.next_cq.get("question", "")
+                _write_guides(handoff, guides_dir)
                 continue
 
             # Merge into accumulated ontology
@@ -207,6 +259,8 @@ class COHAHarness:
             # Update rule sets (FQ: simple union+dedup; DK: conflict resolution per §3.2.2)
             new_fq = list(handoff.formal_quality_rules)
             new_dk = list(handoff.domain_knowledge_rules)
+            new_fq_patterns = list(dict.fromkeys(handoff.fq_learned_patterns + collected_fq_guidance))
+            new_dk_pats = list(handoff.dk_success_patterns)
             if gate_result:
                 new_fq.extend(gate_result.new_fq_rules)
                 new_fq = list(dict.fromkeys(new_fq))
@@ -214,6 +268,9 @@ class COHAHarness:
                     new_dk = self.phase_gate.resolve_dk_conflicts(new_dk, gate_result.new_dk_rules)
                 else:
                     new_dk = list(dict.fromkeys(new_dk))
+                # DK patterns: min-heap eviction — only from accepted (passed) delta
+                if gate_result.passed and gate_result.new_dk_patterns:
+                    new_dk_pats = _update_dk_patterns(new_dk_pats, gate_result.new_dk_patterns)
 
             # RAR: rules added this iteration
             n_rules_after = len(new_fq) + len(new_dk)
@@ -240,7 +297,10 @@ class COHAHarness:
                 domain_knowledge_rules=new_dk,
                 next_cq=next_cq,
                 coverage_gaps=[],
+                fq_learned_patterns=new_fq_patterns,
+                dk_success_patterns=new_dk_pats,
             )
+            _write_guides(handoff, guides_dir)
 
         final_ttl = (
             handoff.accumulated_ontology.ttl if self.config.context_reset else accumulated_ttl

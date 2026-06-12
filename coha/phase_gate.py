@@ -19,6 +19,36 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
+# Deterministic mapping from FQ check ID → actionable OWL generation guideline.
+# Used to build the accumulated FQ guide injected into future CQ prompts.
+FQ_VIOLATION_GUIDANCE: dict = {
+    "FQ-OBJPROP-DOMRANGE": (
+        "Always declare both rdfs:domain and rdfs:range for every owl:ObjectProperty"
+    ),
+    "FQ-DATPROP-XSD-RANGE": (
+        "Use only xsd: datatypes (xsd:string, xsd:integer, xsd:boolean, xsd:float) "
+        "for owl:DatatypeProperty range"
+    ),
+    "FQ-CLASS-LABEL": (
+        "Every owl:Class declaration must include rdfs:label with a human-readable name"
+    ),
+    "FQ-PROP-LABEL": (
+        "Every owl:ObjectProperty and owl:DatatypeProperty must include rdfs:label"
+    ),
+    "FQ-SUBCLASS-RESOURCE": (
+        "rdfs:subClassOf target must be a class URI — never a string literal"
+    ),
+    "FQ-NO-PROP-TYPE-CONFLICT": (
+        "Declare each property as owl:ObjectProperty OR owl:DatatypeProperty — never both"
+    ),
+    "FQ-NO-CLASS-PROP-CONFLICT": (
+        "An entity must not be declared as both owl:Class and a property type"
+    ),
+    "FQ-PARSE": (
+        "Output must be valid Turtle syntax — no markdown fences, no prose, only RDF triples"
+    ),
+}
+
 
 @dataclass
 class GateConfig:
@@ -70,6 +100,8 @@ class GateResult:
     new_fq_rules: List[str]
     new_dk_rules: List[str]
     latency_ms: float
+    new_fq_guidance: List[str] = field(default_factory=list)
+    new_dk_patterns: List[dict] = field(default_factory=list)
 
     @property
     def violations(self):
@@ -93,7 +125,7 @@ class SelfImprovingPhaseGate:
             except Exception as e:
                 logger.warning(f"Could not build doc retriever; DK grounding disabled: {e}")
 
-    def process(self, delta_oi: str, handoff, cq: str) -> GateResult:
+    def process(self, delta_oi: str, handoff, cq: str, cq_index: int = 0) -> GateResult:
         """Run all 4 gate steps for a single CQ's generated delta-Oi."""
         t_start = time.time()
 
@@ -106,23 +138,27 @@ class SelfImprovingPhaseGate:
             active_fq_rules = []
 
         # Step 1: Formal Validation (deterministic rdflib checks)
-        fq_violations, new_fq_rules = self._validate_formal_deterministic(
+        fq_violations, new_fq_rules, fired_ids = self._validate_formal_deterministic(
             delta_oi, active_fq_rules
         )
+        # Build actionable guidance strings from fired check IDs (deduped)
+        new_fq_guidance = list(dict.fromkeys(
+            FQ_VIOLATION_GUIDANCE[cid] for cid in fired_ids if cid in FQ_VIOLATION_GUIDANCE
+        ))
 
         # Step 2: Domain Validation
         active_dk_rules = handoff.domain_knowledge_rules if self.config.dk_accumulate else []
         dk_violations = (
             self._validate_domain(delta_oi, active_dk_rules) if active_dk_rules else []
         )
-        new_dk_rules = []
+        new_dk_rules, new_dk_patterns = [], []
         if self.config.dk_accumulate:
-            new_dk_rules = self._extract_dk_rules(delta_oi, active_dk_rules)
+            new_dk_rules, new_dk_patterns = self._extract_dk_rules(
+                delta_oi, active_dk_rules, cq=cq, cq_index=cq_index
+            )
 
         # FQ violations are hard failures (structural correctness).
         # DK violations are advisory only — logged but do not block acceptance.
-        # Rationale: DK rules are inductively learned and may be noisy early in the sequence;
-        # rejecting valid delta-Oi based on unconfirmed domain rules causes error propagation.
         passed = (len(fq_violations) == 0)
         latency_ms = (time.time() - t_start) * 1000
 
@@ -133,6 +169,8 @@ class SelfImprovingPhaseGate:
             new_fq_rules=new_fq_rules,
             new_dk_rules=new_dk_rules,
             latency_ms=latency_ms,
+            new_fq_guidance=new_fq_guidance,
+            new_dk_patterns=new_dk_patterns,
         )
 
     @staticmethod
@@ -162,12 +200,12 @@ class SelfImprovingPhaseGate:
         # Static mode: fixed catalog, every violation blocks.
         if not self.config.fq_accumulate:
             if not active_fq_rules:
-                return [], []
+                return [], [], []
             active_ids = [self._fq_rule_to_check_id(r) for r in active_fq_rules]
             active_ids = [c for c in active_ids if c in FQ_CHECKS] or ALL_CHECK_IDS
             fired = run_checks(delta_oi, active_ids)
             violations = [m for msgs in fired.values() for m in msgs]
-            return violations, []
+            return violations, [], list(fired.keys())
 
         # Accumulate mode: run the full catalog. ALL violations block immediately.
         # Track first-time check firings for RAR curve (added to new_fq_rules).
@@ -180,7 +218,7 @@ class SelfImprovingPhaseGate:
             hard_violations.extend(msgs)  # every violation blocks immediately
             if cid not in active_ids:
                 newly_learned.append(describe(cid))  # first observation → RAR curve
-        return hard_violations, newly_learned
+        return hard_violations, newly_learned, list(fired.keys())
 
     def _validate_domain(self, delta_oi: str, dk_rules: List[str]) -> List[str]:
         # Only enforce [STRUCT] rules per CQ.
@@ -209,18 +247,21 @@ class SelfImprovingPhaseGate:
             logger.warning(f"DK validation error: {e}")
         return []
 
-    def _extract_dk_rules(self, delta_oi: str, existing_dk_rules: List[str]) -> List[str]:
+    def _extract_dk_rules(
+        self, delta_oi: str, existing_dk_rules: List[str],
+        cq: str = "", cq_index: int = 0,
+    ):
         """Inductively extract DK rules, each GROUNDED in published doctrine.
+
+        Returns (new_rules: List[str], new_patterns: List[dict]).
 
         Pipeline (paper §3.2.2):
           1. LLM induces 0-2 candidate rules from delta-Oi, classified [STRUCT]/[COMPL]
           2. Each candidate is grounded against the doctrine corpus via retrieval +
              LLM verification. Only rules supported by a doctrine passage are kept,
              with a source citation appended as "(src: <section>)".
-
-        This removes the n=1 self-referential weakness: a rule is accepted only if
-        an external authority (ADP/FM doctrine) supports it, not merely because the
-        LLM generated an axiom matching it.
+          3. Grounded rules produce a compressed OWL pattern entry stored in
+             dk_success_patterns for the self-improving guide.
         """
         existing_text = (
             "\n".join(f"- {r}" for r in existing_dk_rules[-10:])
@@ -245,7 +286,7 @@ class SelfImprovingPhaseGate:
         try:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=256)
             if "NONE" in resp.upper()[:20]:
-                return []
+                return [], []
             candidates = []
             for line in resp.strip().split("\n"):
                 line = line.strip().strip("- ")
@@ -254,31 +295,43 @@ class SelfImprovingPhaseGate:
             candidates = candidates[:2]
         except Exception as e:
             logger.warning(f"DK rule extraction error: {e}")
-            return []
+            return [], []
 
         # Ground each candidate in doctrine. If no retriever, fall back to ungrounded
-        # acceptance (so ablations without docs still run).
+        # acceptance (so ablations without docs still run), with no patterns.
         if not self.retriever:
-            return candidates
+            return candidates, []
 
-        grounded = []
+        grounded_rules = []
+        grounded_patterns = []
+        owl_pattern = self._compress_owl_pattern(delta_oi)
         for rule in candidates:
-            citation = self._ground_rule(rule)
+            citation, similarity = self._ground_rule(rule)
             if citation:
-                grounded.append(f"{rule} (src: {citation})")
+                grounded_rules.append(f"{rule} (src: {citation})")
+                if owl_pattern:
+                    grounded_patterns.append({
+                        "cq_summary": cq[:80],
+                        "cq_index": cq_index,
+                        "owl_pattern": owl_pattern,
+                        "citation": citation,
+                        "similarity": similarity,
+                        "rule": rule,
+                    })
             else:
                 logger.info(f"DK rule rejected (no doctrine support): {rule}")
-        return grounded
+        return grounded_rules, grounded_patterns
 
-    def _ground_rule(self, rule: str) -> str:
-        """Return a doctrine section citation if the rule is supported, else ''.
+    def _ground_rule(self, rule: str):
+        """Return (citation, similarity) if doctrine supports the rule, else ('', 0.0).
 
         Two-step: (1) retrieve the most relevant doctrine passage,
                   (2) LLM verifies the passage actually supports the rule.
         """
         evidence = self.retriever.retrieve_evidence(rule, top_k=2)
         if not evidence:
-            return ""
+            return "", 0.0
+        best_similarity = evidence[0][1]
         passages = "\n\n".join(
             f"[{self.retriever.section_title(c)}]\n{c[:700]}" for c, _ in evidence
         )
@@ -295,12 +348,63 @@ class SelfImprovingPhaseGate:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=128)
             lines = [l.strip() for l in resp.strip().split("\n") if l.strip()]
             if lines and lines[0].upper().startswith("SUPPORTED"):
-                if len(lines) > 1:
-                    return lines[1].strip().strip("[]").strip()[:60]
-                return self.retriever.section_title(evidence[0][0])
+                citation = (
+                    lines[1].strip().strip("[]").strip()[:60]
+                    if len(lines) > 1
+                    else self.retriever.section_title(evidence[0][0])
+                )
+                return citation, best_similarity
         except Exception as e:
             logger.warning(f"DK grounding verification error: {e}")
-        return ""
+        return "", 0.0
+
+    @staticmethod
+    def _compress_owl_pattern(delta_oi: str, max_items: int = 4) -> str:
+        """Extract key OWL triples as a compact string (no LLM needed).
+
+        Returns e.g. ":hasCommander(ObjectProperty, :Unit→:Commander); :Mission(Class)"
+        """
+        try:
+            from coha.fq_checker import _parse, OWL, RDFS
+            import rdflib
+
+            g = _parse(delta_oi)
+
+            def local(uri):
+                s = str(uri)
+                for sep in ("#", "/"):
+                    if sep in s:
+                        return s.rsplit(sep, 1)[-1]
+                return s
+
+            TYPE = rdflib.RDF.type
+            OBJ = rdflib.URIRef(OWL + "ObjectProperty")
+            DTP = rdflib.URIRef(OWL + "DatatypeProperty")
+            CLS = rdflib.URIRef(OWL + "Class")
+            DOM = rdflib.URIRef(RDFS + "domain")
+            RAN = rdflib.URIRef(RDFS + "range")
+
+            items = []
+            for p in sorted(set(g.subjects(TYPE, OBJ)), key=str):
+                d = next((local(o) for o in g.objects(p, DOM)), "?")
+                r = next((local(o) for o in g.objects(p, RAN)), "?")
+                items.append(f":{local(p)}(ObjectProperty,:{d}→:{r})")
+                if len(items) >= max_items:
+                    break
+            for p in sorted(set(g.subjects(TYPE, DTP)), key=str):
+                r = next((local(o) for o in g.objects(p, RAN)), "xsd:?")
+                items.append(f":{local(p)}(DatatypeProperty,→{r})")
+                if len(items) >= max_items:
+                    break
+            if len(items) < max_items:
+                for c in sorted(set(g.subjects(TYPE, CLS)), key=str):
+                    if not isinstance(c, rdflib.BNode):
+                        items.append(f":{local(c)}(Class)")
+                        if len(items) >= max_items:
+                            break
+            return "; ".join(items)
+        except Exception:
+            return ""
 
     def check_completeness(self, final_ontology_ttl: str, dk_rules: List[str]) -> dict:
         """Check [COMPL] rules against the final merged ontology (called once at experiment end).
