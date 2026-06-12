@@ -76,9 +76,22 @@ class HandoffArtifact:
             for r in self.formal_quality_rules:
                 parts.append(f"- {r}")
         if self.domain_knowledge_rules:
-            parts.append(f"\n=== Domain Knowledge Rules ({len(self.domain_knowledge_rules)}) ===")
-            for r in self.domain_knowledge_rules:
-                parts.append(f"- {r}")
+            structural = [r for r in self.domain_knowledge_rules if r.startswith("[STRUCT]")]
+            completeness = [r for r in self.domain_knowledge_rules if r.startswith("[COMPL]")]
+            legacy = [r for r in self.domain_knowledge_rules
+                      if not r.startswith("[STRUCT]") and not r.startswith("[COMPL]")]
+            if structural:
+                parts.append(f"\n=== DK Structural Rules ({len(structural)}) — enforce in each delta ===")
+                for r in structural:
+                    parts.append(f"- {r}")
+            if completeness:
+                parts.append(f"\n=== DK Completeness Goals ({len(completeness)}) — eventual targets, not per-CQ ===")
+                for r in completeness:
+                    parts.append(f"- {r}")
+            if legacy:
+                parts.append(f"\n=== Domain Knowledge Rules ({len(legacy)}) ===")
+                for r in legacy:
+                    parts.append(f"- {r}")
         if self.coverage_gaps:
             parts.append(f"\nCoverage Gaps: {', '.join(self.coverage_gaps[:5])}")
         return "\n".join(parts)

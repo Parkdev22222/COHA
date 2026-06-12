@@ -171,26 +171,41 @@ class SelfImprovingPhaseGate:
         return []
 
     def _validate_domain(self, delta_oi: str, dk_rules: List[str]) -> List[str]:
-        rules_text = "\n".join(f"- {r}" for r in dk_rules[-15:])
+        # Only enforce [STRUCT] rules per CQ.
+        # [COMPL] rules are eventual completeness goals — not required in a single delta-Oi.
+        structural_rules = [r for r in dk_rules if r.startswith("[STRUCT]")]
+        if not structural_rules:
+            return []
+        rules_text = "\n".join(f"- {r}" for r in structural_rules[-15:])
         prompt = (
             "You are a military domain ontology validator.\n\n"
-            f"DOMAIN KNOWLEDGE RULES:\n{rules_text}\n\n"
+            "STRUCTURAL DOMAIN RULES (must hold within this delta):\n"
+            f"{rules_text}\n\n"
             f"OWL AXIOMS TO VALIDATE:\n```turtle\n{delta_oi[:2000]}\n```\n\n"
-            "Do these OWL axioms violate any domain knowledge rule or introduce incorrect "
-            "military-domain relationships?\n"
+            "Do these OWL axioms DIRECTLY violate any structural rule above?\n"
+            "Only flag violations that are clearly present in this delta — do NOT flag\n"
+            "missing properties that could be added in later competency questions.\n"
             "Answer YES or NO on the first line.\n"
-            "If YES, list each violation on a separate line."
+            "If YES, list each violated rule on a separate line."
         )
         try:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=512)
             lines = [l.strip() for l in resp.strip().split("\n") if l.strip()]
             if lines and lines[0].upper().startswith("YES"):
-                return lines[1:] if len(lines) > 1 else ["Domain knowledge violation detected."]
+                return lines[1:] if len(lines) > 1 else ["Structural DK violation detected."]
         except Exception as e:
             logger.warning(f"DK validation error: {e}")
         return []
 
     def _extract_dk_rules(self, delta_oi: str, existing_dk_rules: List[str]) -> List[str]:
+        """Inductively extract DK rules, classified as [STRUCT] or [COMPL].
+
+        [STRUCT] — immediate structural constraint; must hold within this delta-Oi.
+                   e.g. relationship directions, prohibited patterns.
+        [COMPL]  — eventual completeness goal; the concept should have these
+                   properties by the time the full ontology is complete.
+                   NOT enforced per CQ — checked only at the end.
+        """
         existing_text = (
             "\n".join(f"- {r}" for r in existing_dk_rules[-10:])
             if existing_dk_rules
@@ -200,25 +215,65 @@ class SelfImprovingPhaseGate:
             "You are inductively learning domain knowledge rules for military ontology generation.\n\n"
             f"EXISTING DOMAIN RULES:\n{existing_text}\n\n"
             f"NEW OWL AXIOMS:\n```turtle\n{delta_oi[:2000]}\n```\n\n"
-            "What NEW domain knowledge rules can be induced from these axioms "
-            "(not already in existing rules)?\n"
-            "Focus on military-domain constraints, required properties, and concept relationships.\n"
-            "Example: 'Military Mission requires: assignedUnit, objective, threatLevel'\n"
-            "Return 0-2 new rules, one per line. If none, reply NONE."
+            "Induce 0-2 NEW domain knowledge rules from these axioms (not already listed above).\n\n"
+            "Classify EACH rule with a prefix:\n"
+            "  [STRUCT] — a structural constraint that must hold within any single delta-Oi\n"
+            "             (e.g. wrong relationship direction, prohibited pattern)\n"
+            "             Example: [STRUCT] :isPartOf must go from smaller to larger unit, not vice versa\n"
+            "  [COMPL]  — an eventual completeness goal for the full ontology\n"
+            "             (e.g. a class should eventually have certain properties)\n"
+            "             Example: [COMPL] :Mission should eventually have: :assignedUnit, :objective, :threatLevel\n\n"
+            "Return each rule on its own line starting with [STRUCT] or [COMPL].\n"
+            "If no new rules are warranted, reply NONE."
         )
         try:
             resp = self.llm_client.generate(system="", user=prompt, max_tokens=256)
             if "NONE" in resp.upper()[:20]:
                 return []
-            rules = [
-                l.strip("- ").strip()
-                for l in resp.strip().split("\n")
-                if l.strip() and len(l.strip()) > 10
-            ]
+            rules = []
+            for line in resp.strip().split("\n"):
+                line = line.strip().strip("- ")
+                if len(line) > 10 and (line.startswith("[STRUCT]") or line.startswith("[COMPL]")):
+                    rules.append(line)
             return rules[:2]
         except Exception as e:
             logger.warning(f"DK rule extraction error: {e}")
         return []
+
+    def check_completeness(self, final_ontology_ttl: str, dk_rules: List[str]) -> dict:
+        """Check [COMPL] rules against the final merged ontology (called once at experiment end).
+
+        Returns:
+            satisfied: list of rules that pass
+            violated: list of rules that fail
+            score: fraction satisfied
+        """
+        compl_rules = [r for r in dk_rules if r.startswith("[COMPL]")]
+        if not compl_rules:
+            return {"satisfied": [], "violated": [], "score": 1.0}
+
+        rules_text = "\n".join(f"- {r}" for r in compl_rules)
+        prompt = (
+            "You are evaluating whether a completed military ontology satisfies its design goals.\n\n"
+            f"COMPLETENESS GOALS:\n{rules_text}\n\n"
+            f"FINAL ONTOLOGY (excerpt):\n```turtle\n{final_ontology_ttl[:4000]}\n```\n\n"
+            "For each completeness goal, answer SATISFIED or VIOLATED.\n"
+            "Format: one line per rule → '<rule text> → SATISFIED' or '<rule text> → VIOLATED'"
+        )
+        try:
+            resp = self.llm_client.generate(system="", user=prompt, max_tokens=512)
+            satisfied, violated = [], []
+            for line in resp.strip().split("\n"):
+                if "SATISFIED" in line.upper():
+                    satisfied.append(line.split("→")[0].strip())
+                elif "VIOLATED" in line.upper():
+                    violated.append(line.split("→")[0].strip())
+            total = len(satisfied) + len(violated)
+            score = round(len(satisfied) / total, 4) if total else 1.0
+            return {"satisfied": satisfied, "violated": violated, "score": score}
+        except Exception as e:
+            logger.warning(f"Completeness check failed: {e}")
+            return {"satisfied": [], "violated": [], "score": 0.0}
 
     def resolve_dk_conflicts(
         self, existing_rules: List[str], new_rules: List[str]

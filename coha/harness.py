@@ -243,6 +243,14 @@ class COHAHarness:
             handoff.accumulated_ontology.ttl if self.config.context_reset else accumulated_ttl
         )
 
+        # Final completeness check: evaluate [COMPL] DK rules against the finished ontology.
+        # This is the correct time to check "eventually must have" goals — after all 60 CQs.
+        completeness_result = {}
+        if self.config.gate_config.dk_accumulate and handoff.domain_knowledge_rules:
+            completeness_result = self.phase_gate.check_completeness(
+                final_ttl, handoff.domain_knowledge_rules
+            )
+
         return {
             "ontology_ttl": final_ttl,
             "handoff": handoff,
@@ -253,6 +261,7 @@ class COHAHarness:
             "n_retries_total": n_retries_total,
             "final_fq_rules": handoff.formal_quality_rules,
             "final_dk_rules": handoff.domain_knowledge_rules,
+            "completeness_result": completeness_result,
             "is_consistent": handoff.accumulated_ontology.consistency == "VALID",
             "usage_stats": (
                 self.llm_client.get_usage_stats()
