@@ -304,7 +304,7 @@ class COHAHarness:
                 fq_learned_patterns=new_fq_patterns,
                 dk_success_patterns=new_dk_pats,
             )
-            _write_guides(handoff, guides_dir)
+            _write_guides(handoff, guides_dir, self.config.name)
 
         final_ttl = (
             handoff.accumulated_ontology.ttl if self.config.context_reset else accumulated_ttl
@@ -318,6 +318,12 @@ class COHAHarness:
                 final_ttl, handoff.domain_knowledge_rules
             )
 
+        # For static_gate, active FQ rules live in gate_config.initial_fq_rules (not handoff).
+        # Report both so the results table shows the correct FQ rule count.
+        effective_fq_rules = list(dict.fromkeys(
+            handoff.formal_quality_rules + self.config.gate_config.initial_fq_rules
+        ))
+
         return {
             "ontology_ttl": final_ttl,
             "handoff": handoff,
@@ -326,7 +332,7 @@ class COHAHarness:
             "gate_times": gate_times,
             "total_times": total_times,
             "n_retries_total": n_retries_total,
-            "final_fq_rules": handoff.formal_quality_rules,
+            "final_fq_rules": effective_fq_rules,
             "final_dk_rules": handoff.domain_knowledge_rules,
             "completeness_result": completeness_result,
             "is_consistent": handoff.accumulated_ontology.consistency == "VALID",
