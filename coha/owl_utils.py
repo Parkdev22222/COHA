@@ -57,7 +57,12 @@ def check_consistency(ontology_ttl: str) -> bool:
     try:
         import rdflib
         g = rdflib.Graph()
-        g.parse(data=ontology_ttl, format="turtle")
+        try:
+            g.parse(data=ontology_ttl, format="turtle")
+        except Exception as parse_err:
+            # Parse errors are already surfaced by FQ-PARSE gate; suppress noisy WARNING.
+            logger.debug(f"check_consistency: Turtle parse failed (FQ gate handles this): {parse_err}")
+            return False
 
         # Check 1: disjoint classes that also share a subclass
         q_disjoint_subclass = """
@@ -70,6 +75,7 @@ def check_consistency(ontology_ttl: str) -> bool:
             FILTER(?a != ?b && ?a != ?c && ?b != ?c)
         }"""
         if bool(g.query(q_disjoint_subclass)):
+            logger.info("check_consistency: disjoint+subClassOf conflict detected")
             return False
 
         # Check 2: property declared functional with conflicting range disjointness
@@ -84,11 +90,12 @@ def check_consistency(ontology_ttl: str) -> bool:
             FILTER(?r1 != ?r2)
         }"""
         if bool(g.query(q_functional)):
+            logger.info("check_consistency: FunctionalProperty range disjointness conflict detected")
             return False
 
         return True
     except Exception as e:
-        logger.warning(f"Consistency check failed: {e}")
+        logger.warning(f"check_consistency: unexpected error: {e}")
         return False
 
 
