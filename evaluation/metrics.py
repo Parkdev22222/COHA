@@ -38,13 +38,13 @@ def compute_ccr(cqs: list, ontology_ttl: str, llm_client) -> float:
     if not cqs or not ontology_ttl.strip():
         return 0.0
 
-    # Use more of the ontology (6000 chars), not just the front
+    # Sample beginning + END (not middle) so later CQs' axioms are always visible.
+    # Sequential accumulation means recent axioms are appended at the tail of the TTL.
     onto_len = len(ontology_ttl)
     if onto_len <= 6000:
         onto_snippet = ontology_ttl
     else:
-        # Take beginning + middle sample to avoid front-loading bias
-        onto_snippet = ontology_ttl[:3000] + "\n...\n" + ontology_ttl[onto_len//2: onto_len//2 + 3000]
+        onto_snippet = ontology_ttl[:3000] + "\n...\n" + ontology_ttl[max(3001, onto_len - 3000):]
 
     covered = 0
     for cq in cqs:
@@ -65,7 +65,11 @@ def compute_ccr(cqs: list, ontology_ttl: str, llm_client) -> float:
         )
         try:
             resp = llm_client.generate(system="", user=prompt, max_tokens=128)
-            if resp.strip().upper().startswith("YES"):
+            # Robust YES detection: find first YES/NO word in first line.
+            # Handles "Sure, YES...", "Yes," and non-English preambles from some LLMs.
+            first_line = resp.strip().split("\n")[0].upper()
+            words = re.findall(r"\b(YES|NO)\b", first_line)
+            if words and words[0] == "YES":
                 covered += 1
         except Exception as e:
             logger.warning(f"CCR judge error: {e}")
@@ -497,18 +501,21 @@ def compute_sparql_ccr(cqs: list, ontology_ttl: str, llm_client) -> dict:
                     f"| query: {full_query[:120]}"
                 )
 
-        # ── Step 3: Fallback — direct key_entity graph lookup ──────────────
+        # ── Step 3: Fallback — recorded for diagnostics only, NOT counted as covered.
+        # A CQ is "covered" only when the LLM-generated SPARQL query returns True.
+        # Counting fallback (key_entity present ≥ 1) inflates sparql_ccr to
+        # near-SC levels, making it indistinguishable from vocabulary presence.
         fallback_passed = False
         if not llm_passed:
             fallback_passed = _sparql_key_entity_fallback(g, cq, MIL_PREFIX)
             if fallback_passed and status != "pass":
-                status = "fallback"
+                status = "fallback"  # logged but not counted
 
-        covered = llm_passed or fallback_passed
+        covered = llm_passed  # strict: only LLM-generated SPARQL counts
         if covered:
             passed += 1
 
-        results.append({"cq": q_text, "status": status})
+        results.append({"cq": q_text, "status": status, "fallback": fallback_passed})
 
     total = len(cqs)
     coverage = round(passed / total, 4) if total else 0.0
@@ -547,7 +554,7 @@ def compute_llm_judge_detailed(cqs: list, ontology_ttl: str, llm_client) -> dict
     onto_snippet = (
         ontology_ttl
         if onto_len <= 6000
-        else ontology_ttl[:3000] + "\n...\n" + ontology_ttl[onto_len // 2: onto_len // 2 + 3000]
+        else ontology_ttl[:3000] + "\n...\n" + ontology_ttl[max(3001, onto_len - 3000):]
     )
 
     details = []
