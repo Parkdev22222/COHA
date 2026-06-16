@@ -22,12 +22,33 @@ VARIANT_KEYS = [
     "COHA-no-DK",
     "COHA-full",
     "COHA+Ontogenia",
+    "COHA+OntoGPT",
 ]
 
 
 def _safe_filename(name: str) -> str:
     """Convert variant name to a filesystem-safe string (e.g. 'COHA-full' → 'COHA_full')."""
     return name.replace("+", "_plus_").replace("-", "_").replace(" ", "_")
+
+
+def _make_coha_ontogpt(client, ALL_CQS, USER_STORY, DOMAIN_DOCS):
+    """Return a zero-argument callable for the COHA+OntoGPT variant.
+
+    OntoGPT runs first (single-pass schema extraction) to produce a seed TTL.
+    COHA-full then iterates over all 60 CQs starting from that warm ontology.
+    """
+    from baselines.ontogpt_agent import OntoGPTAgent
+    from coha.harness import COHAHarness, HarnessConfig
+
+    def _run():
+        print("  [COHA+OntoGPT] Phase 1: OntoGPT seed extraction...")
+        base = OntoGPTAgent(client).run(ALL_CQS, USER_STORY, DOMAIN_DOCS)
+        seed_ttl = base.get("ontology_ttl", "")
+        print(f"  [COHA+OntoGPT] Phase 2: COHA-full warm start from {len(seed_ttl)} chars of seed TTL.")
+        config = HarnessConfig.coha_ontogpt(seed_ttl=seed_ttl)
+        return COHAHarness(client, config, domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)
+
+    return _run
 
 
 def _build_variants(client, ALL_CQS, USER_STORY, DOMAIN_DOCS):
@@ -54,6 +75,7 @@ def _build_variants(client, ALL_CQS, USER_STORY, DOMAIN_DOCS):
         ("COHA-no-DK",        lambda: COHAHarness(client, HarnessConfig.coha_no_dk(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
         ("COHA-full",         lambda: COHAHarness(client, HarnessConfig.coha_full(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
         ("COHA+Ontogenia",    lambda: COHAHarness(client, HarnessConfig.coha_ontogenia(), domain_docs=DOMAIN_DOCS).run(ALL_CQS, USER_STORY)),
+        ("COHA+OntoGPT",      _make_coha_ontogpt(client, ALL_CQS, USER_STORY, DOMAIN_DOCS)),
     ]
 
 
