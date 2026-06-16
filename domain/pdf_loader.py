@@ -35,6 +35,7 @@ def load_pdf_text(pdf_path: str) -> str:
 
     try:
         doc = fitz.open(pdf_path)
+        n_pages = len(doc)
         pages = []
         for i, page in enumerate(doc, 1):
             text = page.get_text()
@@ -42,7 +43,7 @@ def load_pdf_text(pdf_path: str) -> str:
                 pages.append(f"--- Page {i} ---\n{text.strip()}")
         doc.close()
         full_text = "\n\n".join(pages)
-        logger.info(f"Loaded PDF: {pdf_path} ({len(doc)} pages, {len(full_text)} chars)")
+        logger.info(f"Loaded PDF: {pdf_path} ({n_pages} pages, {len(full_text)} chars)")
         return full_text
     except Exception as e:
         raise RuntimeError(f"Failed to extract text from {pdf_path}: {e}") from e
