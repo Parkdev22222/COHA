@@ -1,7 +1,20 @@
 """
 Military domain documentation and user stories.
-Copied from domains/military_tactical.py (DOMAIN_DOCS and USER_STORIES only).
+
+DOMAIN_DOCS: built-in summary of ADP 3-0 / ADP 3-90 / FM 3-0 / ROE materials.
+
+At module load time, if domain/ADP_3-90.pdf is present, its full text replaces
+the built-in summary as the authoritative doctrine corpus for DK grounding and
+gold standard generation. Place the PDF at:
+
+    <repo_root>/domain/ADP_3-90.pdf
+
+then run: python domain/build_gold_standard.py  (to regenerate gold_standard.ttl)
 """
+import logging as _logging
+import os as _os
+
+_logger = _logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Domain Documentation
@@ -275,3 +288,19 @@ As a division G3 (operations officer), I need the agent to recommend task organi
 -- assigning unit types (Infantry, Armor, Aviation, Artillery, SF) to tasks based on
 terrain, enemy, and mission requirements -- following combined arms doctrine.
 """
+
+# ---------------------------------------------------------------------------
+# Auto-load from PDF if present (overrides built-in summary)
+# ---------------------------------------------------------------------------
+
+_PDF_PATH = _os.path.join(_os.path.dirname(__file__), "ADP_3-90.pdf")
+
+if _os.path.exists(_PDF_PATH):
+    try:
+        from domain.pdf_loader import load_pdf_text as _load_pdf
+        _pdf_text = _load_pdf(_PDF_PATH)
+        if _pdf_text.strip():
+            DOMAIN_DOCS = _pdf_text
+            _logger.info(f"DOMAIN_DOCS: loaded from PDF ({len(DOMAIN_DOCS)} chars)")
+    except Exception as _e:
+        _logger.warning(f"ADP_3-90.pdf found but could not be loaded — using built-in docs: {_e}")
