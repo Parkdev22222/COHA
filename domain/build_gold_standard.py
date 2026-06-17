@@ -50,6 +50,40 @@ def _extract_turtle(text: str) -> str:
     return text.strip()
 
 
+def _subdomain_guidance(subdomain: str) -> str:
+    """Return extra prompt guidance tailored to each subdomain."""
+    if subdomain == "tactical_prescriptions":
+        return (
+            "SPECIAL FOCUS — UNIT MATCHUPS AND TACTICAL PRESCRIPTIONS:\n"
+            "This subdomain requires explicit modelling of:\n"
+            "  A) UNIT MATCHUPS (병종 상성): Which unit types defeat which in which terrain?\n"
+            "     - Create :UnitMatchup class linking two unit types and a terrain context\n"
+            "     - Use :effectiveAgainst (domain :Unit, range :Unit) for superiority\n"
+            "     - Use :vulnerableTo (domain :Unit, range :Unit) for disadvantage\n"
+            "     - Example: Armor :effectiveAgainst Infantry in OpenTerrain\n"
+            "       but Infantry :effectiveAgainst Armor in UrbanTerrain/ForestTerrain\n"
+            "     - Aviation :vulnerableTo in MountainTerrain, ForestTerrain (low ceiling)\n"
+            "     - Engineer supports Armor in BreachOperation\n"
+            "  B) REQUIRED ACTIONS (해야 할 것) per operation type:\n"
+            "     - :RequiredAction (subClassOf :TacticalPrescription)\n"
+            "     - Must link to :FormOfManeuver or :Mission via :appliesTo / :appliesToManeuver\n"
+            "     - Examples: Penetration requires suppression of flanks before exploitation;\n"
+            "       MobileDefense requires FixingForce before committing StrikeForce;\n"
+            "       TurningMovement requires FixingForce to pin enemy\n"
+            "  C) FORBIDDEN ACTIONS (하지 말아야 할 것) per operation type:\n"
+            "     - :ForbiddenAction (subClassOf :TacticalPrescription)\n"
+            "     - Envelopment: do NOT halt the enveloping force — loss of momentum\n"
+            "     - Delay: do NOT become decisively engaged\n"
+            "     - Exploitation: do NOT pause to consolidate prematurely\n"
+            "     - Withdrawal under pressure: do NOT withdraw without a covering force\n"
+            "  D) COURSE OF ACTION CONSTRAINTS:\n"
+            "     - :CourseOfAction, :COAConstraint, :OperationalConstraint, :TacticalConstraint\n"
+            "     - Armor in UrbanTerrain without Infantry support is a doctrinal violation\n"
+            "     - Reconnaissance units must NOT be committed to direct combat\n\n"
+        )
+    return ""
+
+
 def build_gold_standard(pdf_text: str, cqs: list, llm_client) -> str:
     """
     Ontogenia-style gold standard extraction.
@@ -77,12 +111,16 @@ def build_gold_standard(pdf_text: str, cqs: list, llm_client) -> str:
             f"  - [{cq['id']}] {cq['question']}  key_entities: {cq.get('key_entities', [])}"
             for cq in sd_cqs
         )
+        # Subdomain-specific guidance injected into prompt
+        extra_guidance = _subdomain_guidance(subdomain)
+
         prompt = (
             "You are a military ontology expert constructing a gold standard ontology "
             "from published US Army doctrine (ADP 3-90 Offense and Defense).\n\n"
             f"DOCTRINE EXCERPT:\n{doc_excerpt}\n\n"
             f"SUBDOMAIN: {subdomain}\n"
             f"COMPETENCY QUESTIONS TO COVER:\n{cq_list}\n\n"
+            f"{extra_guidance}"
             "STEP 1 — Reflect (3-5 sentences):\n"
             "  What classes, object properties, and datatype properties are needed "
             "to formally answer ALL the above CQs? What doctrine concepts must be captured?\n\n"
@@ -92,7 +130,7 @@ def build_gold_standard(pdf_text: str, cqs: list, llm_client) -> str:
             "2. Every key_entity MUST appear as owl:Class or owl:ObjectProperty\n"
             "3. Every owl:ObjectProperty MUST have rdfs:domain and rdfs:range\n"
             "4. Every owl:DatatypeProperty MUST have rdfs:domain and xsd: range\n"
-            "5. Every class and property MUST have rdfs:label\n"
+            "5. Every class and property MUST have rdfs:label AND rdfs:comment\n"
             "6. Include rdfs:subClassOf hierarchies where doctrine supports it\n"
             "7. Return ONLY valid Turtle after GENERATE: — no markdown, no prose\n\n"
             "Write your reflection, then GENERATE:"
@@ -137,6 +175,53 @@ def build_gold_standard(pdf_text: str, cqs: list, llm_client) -> str:
             logger.info(f"Pass 2 patch: {len(patch)} chars added")
     except Exception as e:
         logger.warning(f"Pass 2 completion failed: {e}")
+
+    # Pass 3: Tactical prescriptions deep-extraction
+    # Explicitly generates unit matchup triples and Required/Forbidden action instances
+    prescription_prompt = (
+        "You are a military ontology expert. "
+        "Extend the ontology below with TACTICAL PRESCRIPTIONS drawn from ADP 3-90.\n\n"
+        f"CURRENT ONTOLOGY (excerpt):\n```turtle\n{merged[:4000]}\n```\n\n"
+        "Generate NEW Turtle axioms covering ALL of the following — do not repeat existing ones:\n\n"
+        "1. UNIT MATCHUP RULES (병종 상성) — use :effectiveAgainst and :vulnerableTo:\n"
+        "   - Armor effective against Infantry in OpenTerrain and DesertTerrain\n"
+        "   - Infantry effective against Armor in UrbanTerrain and ForestTerrain\n"
+        "   - Aviation vulnerable to ForestTerrain and MountainTerrain (low ceiling)\n"
+        "   - FieldArtillery effective against any unit in OpenTerrain (range advantage)\n"
+        "   - SpecialForcesUnit effective against EnemyUnit in denied/complex terrain\n"
+        "   - EngineerUnit counters ObstacleBelt (enables Armor in BreachOperation)\n\n"
+        "2. REQUIRED ACTIONS (RequiredAction instances) per form of maneuver:\n"
+        "   For each: link to FormOfManeuver via :appliesToManeuver, set :isRequired true,\n"
+        "   set rdfs:label and :prescriptionText.\n"
+        "   - Penetration: suppress flanks before exploitation; mass combat power at breach point\n"
+        "   - Envelopment: fix enemy frontally; maintain communication with enveloping force\n"
+        "   - TurningMovement: employ FixingForce to hold enemy; threaten logistics\n"
+        "   - MobileDefense: establish FixingForce before committing StrikeForce\n"
+        "   - Infiltration: maintain noise/light discipline; move at night\n\n"
+        "3. FORBIDDEN ACTIONS (ForbiddenAction instances) per operation:\n"
+        "   For each: link to Mission or FormOfManeuver, set :isProhibited true,\n"
+        "   set rdfs:label and :prescriptionText.\n"
+        "   - Delay: do NOT become decisively engaged; do NOT hold ground at all cost\n"
+        "   - Exploitation: do NOT halt prematurely; do NOT consolidate before objective secured\n"
+        "   - Withdrawal: do NOT withdraw without covering force; do NOT abandon equipment\n"
+        "   - Envelopment: do NOT allow enveloping force to be halted or fixed\n"
+        "   - UrbanTerrain Armor: do NOT employ armor without infantry support\n\n"
+        "4. COA CONSTRAINTS (COAConstraint instances):\n"
+        "   - Armor-without-infantry in UrbanTerrain is a doctrinal violation (ForbiddenAction)\n"
+        "   - Reconnaissance units committed to direct combat is a ForbiddenAction\n"
+        "   - Reserve commitment requires DecisionPoint confirmation (RequiredAction)\n\n"
+        "Return ONLY the NEW Turtle axioms (no prefixes, no existing axioms).\n"
+        "Every new class needs rdfs:label and rdfs:comment.\n"
+        "Every new property needs rdfs:domain, rdfs:range, and rdfs:label."
+    )
+    try:
+        raw3 = llm_client.generate(system="", user=prescription_prompt, max_tokens=4096)
+        patch3 = _extract_turtle(raw3)
+        if patch3.strip():
+            merged = merge_ontologies(merged, patch3)
+            logger.info(f"Pass 3 (prescriptions) patch: {len(patch3)} chars added")
+    except Exception as e:
+        logger.warning(f"Pass 3 prescription extraction failed: {e}")
 
     return merged
 

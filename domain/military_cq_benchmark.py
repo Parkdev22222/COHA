@@ -327,7 +327,112 @@ ISR_CQS: List[Dict] = [
     },
 ]
 
-ALL_CQS: List[Dict] = TACTICAL_GROUND_CQS + C2_CQS + ISR_CQS
+# == Sub-domain 4: Tactical Prescriptions — Matchups & COA Dos/Don'ts (TP01-20) =
+
+TACTICAL_PRESCRIPTION_CQS: List[Dict] = [
+    {
+        "id": "TP01", "subdomain": "tactical_prescriptions",
+        "question": "Which unit types are most effective against enemy armor in open terrain?",
+        "key_entities": ["UnitMatchup", "ArmorUnit", "effectiveAgainst", "OpenTerrain"],
+    },
+    {
+        "id": "TP02", "subdomain": "tactical_prescriptions",
+        "question": "What is the counter-unit pairing when enemy infantry occupies fortified urban terrain?",
+        "key_entities": ["UnitMatchup", "CounterUnit", "InfantryUnit", "UrbanTerrain"],
+    },
+    {
+        "id": "TP03", "subdomain": "tactical_prescriptions",
+        "question": "Which unit types are vulnerable to ambush in forested terrain and what countermeasures apply?",
+        "key_entities": ["UnitMatchup", "vulnerableTo", "ForestTerrain", "TacticalConstraint"],
+    },
+    {
+        "id": "TP04", "subdomain": "tactical_prescriptions",
+        "question": "What required actions must a commander take before executing a penetration form of maneuver?",
+        "key_entities": ["RequiredAction", "Penetration", "FormOfManeuver", "TacticalPrescription"],
+    },
+    {
+        "id": "TP05", "subdomain": "tactical_prescriptions",
+        "question": "What actions are prohibited when conducting an envelopment to prevent fratricide?",
+        "key_entities": ["ForbiddenAction", "Envelopment", "FormOfManeuver", "TacticalPrescription"],
+    },
+    {
+        "id": "TP06", "subdomain": "tactical_prescriptions",
+        "question": "What is the required reserve commitment condition during an area defense to defeat a penetration?",
+        "key_entities": ["RequiredAction", "AreaDefense", "Reserve", "TacticalPrescription"],
+    },
+    {
+        "id": "TP07", "subdomain": "tactical_prescriptions",
+        "question": "What actions are forbidden during a delay operation to preserve force integrity?",
+        "key_entities": ["ForbiddenAction", "Delay", "TacticalPrescription", "OperationalConstraint"],
+    },
+    {
+        "id": "TP08", "subdomain": "tactical_prescriptions",
+        "question": "Which course of action violates doctrine when armor operates without infantry support in urban terrain?",
+        "key_entities": ["CourseOfAction", "COAConstraint", "ArmorUnit", "InfantryUnit", "UrbanTerrain"],
+    },
+    {
+        "id": "TP09", "subdomain": "tactical_prescriptions",
+        "question": "What required actions apply when transitioning from offense to defense to consolidate gains?",
+        "key_entities": ["RequiredAction", "OffensiveMission", "DefensiveMission", "TacticalPrescription"],
+    },
+    {
+        "id": "TP10", "subdomain": "tactical_prescriptions",
+        "question": "What is forbidden when conducting a withdrawal under enemy pressure without a covering force?",
+        "key_entities": ["ForbiddenAction", "Withdrawal", "CoveringForce", "TacticalPrescription"],
+    },
+    {
+        "id": "TP11", "subdomain": "tactical_prescriptions",
+        "question": "Which unit matchup creates a disadvantage when armor faces anti-armor infantry in close terrain?",
+        "key_entities": ["UnitMatchup", "ArmorUnit", "vulnerableTo", "InfantryUnit", "effectiveAgainst"],
+    },
+    {
+        "id": "TP12", "subdomain": "tactical_prescriptions",
+        "question": "What tactical actions are required to fix the enemy during a turning movement?",
+        "key_entities": ["RequiredAction", "TurningMovement", "FixingForce", "TacticalPrescription"],
+    },
+    {
+        "id": "TP13", "subdomain": "tactical_prescriptions",
+        "question": "What actions are prohibited during an exploitation operation to avoid losing momentum?",
+        "key_entities": ["ForbiddenAction", "Exploitation", "TacticalPrescription", "OperationalConstraint"],
+    },
+    {
+        "id": "TP14", "subdomain": "tactical_prescriptions",
+        "question": "Which terrain type makes aviation units most vulnerable and what mitigation actions are required?",
+        "key_entities": ["UnitMatchup", "AviationUnit", "vulnerableTo", "TerrainType", "RequiredAction"],
+    },
+    {
+        "id": "TP15", "subdomain": "tactical_prescriptions",
+        "question": "What is the prescribed course of action when the strike force encounters unexpected resistance during mobile defense?",
+        "key_entities": ["CourseOfAction", "MobileDefense", "COAConstraint", "TacticalPrescription"],
+    },
+    {
+        "id": "TP16", "subdomain": "tactical_prescriptions",
+        "question": "What decision-point conditions must be met before committing the reserve during a defensive operation?",
+        "key_entities": ["RequiredAction", "Reserve", "DefensiveMission", "DecisionPoint", "TacticalPrescription"],
+    },
+    {
+        "id": "TP17", "subdomain": "tactical_prescriptions",
+        "question": "Which combined arms actions are prescribed when Special Forces units require conventional force enablement?",
+        "key_entities": ["RequiredAction", "SpecialForcesUnit", "CourseOfAction", "TacticalPrescription"],
+    },
+    {
+        "id": "TP18", "subdomain": "tactical_prescriptions",
+        "question": "What is the doctrinal prohibition on committing reconnaissance units to direct combat?",
+        "key_entities": ["ForbiddenAction", "SensorPlatform", "TacticalPrescription", "OperationalConstraint"],
+    },
+    {
+        "id": "TP19", "subdomain": "tactical_prescriptions",
+        "question": "Which unit type counters enemy air defense and what actions must precede aviation deep attack?",
+        "key_entities": ["UnitMatchup", "AirDefenseUnit", "AviationUnit", "effectiveAgainst", "RequiredAction"],
+    },
+    {
+        "id": "TP20", "subdomain": "tactical_prescriptions",
+        "question": "What course of action constraints apply when fire support is unavailable and maneuver forces must close with the enemy?",
+        "key_entities": ["COAConstraint", "CourseOfAction", "FireSupportAsset", "TacticalPrescription", "OperationalConstraint"],
+    },
+]
+
+ALL_CQS: List[Dict] = TACTICAL_GROUND_CQS + C2_CQS + ISR_CQS + TACTICAL_PRESCRIPTION_CQS
 
 # == Gold Standard Ontology (rebuilt against doctrine + 60 CQ key_entities) ==
 # Construction: Rebuilt from ADP 3-0 (2019), ADP 3-90 (2019), FM 3-0 (2022),
@@ -750,6 +855,102 @@ GOLD_STANDARD_TTL: str = """
 :terrainRetentionRequired a owl:DatatypeProperty ;
     rdfs:label "terrain retention required" ;
     rdfs:domain :DefensiveMission ; rdfs:range xsd:boolean .
+
+# ── UNIT MATCHUPS (병종 상성) ─────────────────────────────────────────────────
+
+:UnitMatchup a owl:Class ; rdfs:label "Unit Matchup" ;
+    rdfs:comment "Doctrinal effectiveness relationship between two unit types in a given context." .
+:CounterUnit a owl:Class ; rdfs:label "Counter Unit" ; rdfs:subClassOf :Unit ;
+    rdfs:comment "A unit type specifically effective against another unit type." .
+:FixingForce a owl:Class ; rdfs:label "Fixing Force" ; rdfs:subClassOf :Unit ;
+    rdfs:comment "Force that holds the enemy in position while the strike force maneuvers." .
+:CoveringForce a owl:Class ; rdfs:label "Covering Force" ; rdfs:subClassOf :Unit ;
+    rdfs:comment "Force that protects the main body during retrograde operations." .
+:StrikeForce a owl:Class ; rdfs:label "Strike Force" ; rdfs:subClassOf :Unit ;
+    rdfs:comment "The mobile force that delivers the decisive blow in mobile defense." .
+
+:effectiveAgainst a owl:ObjectProperty ;
+    rdfs:label "effective against" ;
+    rdfs:domain :Unit ; rdfs:range :Unit ;
+    rdfs:comment "Doctrinal effectiveness: subject unit type defeats the object unit type." .
+
+:vulnerableTo a owl:ObjectProperty ;
+    rdfs:label "vulnerable to" ;
+    rdfs:domain :Unit ; rdfs:range :Unit ;
+    rdfs:comment "Doctrinal vulnerability: subject unit type is at disadvantage against the object." .
+
+:counters a owl:ObjectProperty ;
+    rdfs:label "counters" ;
+    rdfs:domain :CounterUnit ; rdfs:range :Unit ;
+    rdfs:comment "Which unit type this counter-unit is designed to defeat." .
+
+:matchupInvolves a owl:ObjectProperty ;
+    rdfs:label "matchup involves" ;
+    rdfs:domain :UnitMatchup ; rdfs:range :Unit .
+
+:matchupContext a owl:ObjectProperty ;
+    rdfs:label "matchup context terrain" ;
+    rdfs:domain :UnitMatchup ; rdfs:range :TerrainType .
+
+# ── TACTICAL PRESCRIPTIONS (방책 — 해야 할 것 / 하지 말아야 할 것) ────────────
+
+:TacticalPrescription a owl:Class ; rdfs:label "Tactical Prescription" ;
+    rdfs:comment "Doctrine-based guidance: a required or forbidden action tied to an operation type." .
+:RequiredAction a owl:Class ; rdfs:label "Required Action" ; rdfs:subClassOf :TacticalPrescription ;
+    rdfs:comment "An action the doctrine mandates must be taken (해야 할 것)." .
+:ForbiddenAction a owl:Class ; rdfs:label "Forbidden Action" ; rdfs:subClassOf :TacticalPrescription ;
+    rdfs:comment "An action the doctrine prohibits (하지 말아야 할 것)." .
+
+:CourseOfAction a owl:Class ; rdfs:label "Course of Action (COA)" ;
+    rdfs:comment "A possible plan of action evaluated during MDMP." .
+:COAConstraint a owl:Class ; rdfs:label "COA Constraint" ;
+    rdfs:comment "A limitation or boundary that restricts a course of action." .
+:OperationalConstraint a owl:Class ; rdfs:label "Operational Constraint" ; rdfs:subClassOf :COAConstraint ;
+    rdfs:comment "Mission-level constraint from higher HQ or doctrine." .
+:TacticalConstraint a owl:Class ; rdfs:label "Tactical Constraint" ; rdfs:subClassOf :COAConstraint ;
+    rdfs:comment "Tactical-level constraint based on terrain, enemy, or time." .
+
+:appliesTo a owl:ObjectProperty ;
+    rdfs:label "applies to" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range :Mission ;
+    rdfs:comment "Links a prescription to the mission or operation type it governs." .
+
+:appliesToManeuver a owl:ObjectProperty ;
+    rdfs:label "applies to maneuver form" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range :FormOfManeuver .
+
+:prescribes a owl:ObjectProperty ;
+    rdfs:label "prescribes" ;
+    rdfs:domain :CourseOfAction ; rdfs:range :TacticalPrescription .
+
+:hasConstraint a owl:ObjectProperty ;
+    rdfs:label "has constraint" ;
+    rdfs:domain :CourseOfAction ; rdfs:range :COAConstraint .
+
+:constrainsUnit a owl:ObjectProperty ;
+    rdfs:label "constrains unit type" ;
+    rdfs:domain :COAConstraint ; rdfs:range :Unit .
+
+:constrainedByTerrain a owl:ObjectProperty ;
+    rdfs:label "constrained by terrain" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range :TerrainType .
+
+:triggeredByMatchup a owl:ObjectProperty ;
+    rdfs:label "triggered by unit matchup" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range :UnitMatchup .
+
+:isProhibited a owl:DatatypeProperty ;
+    rdfs:label "is prohibited action" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range xsd:boolean .
+
+:isRequired a owl:DatatypeProperty ;
+    rdfs:label "is required action" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range xsd:boolean .
+
+:prescriptionText a owl:DatatypeProperty ;
+    rdfs:label "prescription text" ;
+    rdfs:domain :TacticalPrescription ; rdfs:range xsd:string ;
+    rdfs:comment "Natural-language statement of the required or forbidden action." .
 """
 
 USER_STORY: str = (
