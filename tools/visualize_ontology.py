@@ -411,8 +411,8 @@ def visualize_to_html(
 const GRAPH = {graph_json};
 const HAS_COMPARE = {has_compare};
 
-const width = document.getElementById("graph").clientWidth || 900;
-const height = document.getElementById("graph").clientHeight || 700;
+const width = window.innerWidth || 900;
+const height = window.innerHeight || 700;
 
 const svg = d3.select("#graph").append("svg")
   .call(d3.zoom().scaleExtent([0.05, 5]).on("zoom", e => g.attr("transform", e.transform)));
@@ -594,8 +594,14 @@ svg.on("click", () => {{
 
 def show_in_colab(html: str, height: int = 800):
     """Display HTML visualization inline in a Colab notebook."""
+    import base64
     from IPython.display import display, HTML
-    display(HTML(f'<div style="height:{height}px">{html}</div>'))
+    b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
+    iframe = (
+        f'<iframe src="data:text/html;base64,{b64}" '
+        f'width="100%" height="{height}px" frameborder="0"></iframe>'
+    )
+    display(HTML(iframe))
 
 
 # ---------------------------------------------------------------------------
