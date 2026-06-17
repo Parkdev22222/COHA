@@ -283,7 +283,6 @@ def _parse_with_regex(ttl_text: str) -> Dict:
                               "range":  base_ns + rm.group(1) if rm else ""}
 
     # Infer object properties from rdfs:domain lines (without explicit typing)
-    # Pattern: :propName rdfs:domain :ClassName (on one logical statement)
     for m in re.finditer(
         r':([\w]+)\s+rdfs:(?:label\s+"[^"]+"\s*[;,]\s*)?domain\s+:([\w]+)',
         ttl_text, re.MULTILINE
@@ -505,17 +504,6 @@ def visualize_to_html(
     graph_data = _build_graph_data(onto, compare_onto)
     stats      = onto["stats"]
 
-    # ---- stats bar ----
-    stats_html = f"""
-        <div class="stat"><span class="stat-num">{stats['n_classes']}</span><br>Classes</div>
-        <div class="stat"><span class="stat-num">{stats['n_individuals']}</span><br>Individuals</div>
-        <div class="stat"><span class="stat-num">{stats['n_object_props']}</span><br>Obj Props</div>
-        <div class="stat"><span class="stat-num">{stats['n_datatype_props']}</span><br>Data Props</div>
-        <div class="stat"><span class="stat-num">{stats['n_subclass']}</span><br>SubClass</div>
-        <div class="stat"><span class="stat-num">{stats['n_prop_edges']}</span><br>Prop Edges</div>
-    """
-
-    # ---- compare legend ----
     compare_legend = ""
     if compare_path:
         cname = os.path.splitext(os.path.basename(compare_path))[0]
@@ -524,23 +512,27 @@ def visualize_to_html(
         <div class="legend-item"><span class="dot" style="background:#e74c3c"></span>Not in {cname}</div>
         """
 
-    graph_json  = json.dumps(graph_data)
-    has_compare = "true" if compare_path else "false"
+    init_graph_json = json.dumps(graph_data)
+    init_stats_json = json.dumps(stats)
+    init_title_json = json.dumps(display_title)
+    has_compare     = "true" if compare_path else "false"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>{display_title} — Ontology Viz</title>
+<title>Ontology Visualizer</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/n3@1/browser/n3.min.js"></script>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body,html{{height:100%}}
   #coha-root{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     background:#1a1a2e;color:#eee;height:100%;display:flex;flex-direction:column}}
   #header{{background:#16213e;padding:8px 16px;display:flex;align-items:center;
-    gap:16px;border-bottom:1px solid #0f3460;flex-shrink:0;flex-wrap:wrap}}
-  #header h1{{font-size:15px;color:#e0e0ff;white-space:nowrap}}
+    gap:12px;border-bottom:1px solid #0f3460;flex-shrink:0;flex-wrap:wrap}}
+  #header h1{{font-size:14px;color:#e0e0ff;white-space:nowrap;max-width:260px;
+    overflow:hidden;text-overflow:ellipsis}}
   .stats{{display:flex;gap:10px;flex-wrap:wrap}}
   .stat{{text-align:center;font-size:10px;color:#aaa;line-height:1.3}}
   .stat-num{{font-size:16px;font-weight:bold;color:#7eb8f7}}
@@ -551,6 +543,16 @@ def visualize_to_html(
   .dot{{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}}
   .diamond{{width:9px;height:9px;display:inline-block;flex-shrink:0;
     transform:rotate(45deg);border-radius:1px}}
+  /* File load button */
+  .load-btn{{background:#0f3460;border:1px solid #4a90d9;color:#7eb8f7;
+    padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;
+    white-space:nowrap;transition:background .2s}}
+  .load-btn:hover{{background:#1a4a7a}}
+  /* Drop overlay */
+  #drop-overlay{{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);
+    z-index:100;align-items:center;justify-content:center;
+    font-size:24px;color:#7eb8f7;border:3px dashed #4a90d9}}
+  #drop-overlay.active{{display:flex}}
   #controls{{background:#16213e;padding:5px 16px;display:flex;gap:10px;
     align-items:center;border-bottom:1px solid #0f3460;flex-shrink:0;
     font-size:11px;flex-wrap:wrap}}
@@ -587,14 +589,20 @@ def visualize_to_html(
   .node.dimmed{{opacity:0.15}}
   .link.dimmed{{opacity:0.04}}
   .link-label.dimmed{{opacity:0.04}}
+  #parse-error{{display:none;position:fixed;bottom:16px;right:16px;
+    background:#c0392b;color:#fff;padding:10px 16px;border-radius:6px;
+    font-size:12px;max-width:400px;z-index:200}}
 </style>
 </head>
 <body>
 <div id="coha-root">
 
+<div id="drop-overlay" id="drop-overlay">📂 Drop TTL file to visualize</div>
+<div id="parse-error"></div>
+
 <div id="header">
-  <h1>{display_title}</h1>
-  <div class="stats">{stats_html}</div>
+  <h1 id="title-el">Loading…</h1>
+  <div class="stats" id="stats-bar"></div>
   <div class="legend">
     {compare_legend}
     <div class="legend-item" onclick="toggleNodeType('class')">
@@ -618,6 +626,10 @@ def visualize_to_html(
     <div class="legend-item" onclick="toggleEdgeKind('schema')">
       <span style="display:inline-block;width:20px;border-top:1.5px solid #3498db"></span>Schema
     </div>
+    <label class="load-btn">
+      📂 Load TTL
+      <input type="file" id="ttl-file-input" accept=".ttl,.turtle,.owl" style="display:none">
+    </label>
   </div>
 </div>
 
@@ -646,128 +658,390 @@ def visualize_to_html(
 </div>
 
 <script>
-const GRAPH = {graph_json};
+// ---- Constants ----
+const OWL_NS  = "http://www.w3.org/2002/07/owl#";
+const RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#";
+const RDF_NS  = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+const XSD_NS  = "http://www.w3.org/2001/XMLSchema#";
+const SKIP_NS  = [OWL_NS, RDFS_NS, RDF_NS, XSD_NS];
+const SKIP_URI = new Set([OWL_NS+"Thing", RDFS_NS+"Resource", RDFS_NS+"Class"]);
+const SKIP_PROPS = new Set([
+  RDF_NS+"type", RDFS_NS+"subClassOf", RDFS_NS+"label", RDFS_NS+"comment",
+  RDFS_NS+"domain", RDFS_NS+"range", OWL_NS+"equivalentClass",
+  OWL_NS+"disjointWith", OWL_NS+"sameAs", OWL_NS+"inverseOf",
+  OWL_NS+"onProperty", OWL_NS+"someValuesFrom", OWL_NS+"allValuesFrom",
+  OWL_NS+"complementOf", OWL_NS+"unionOf", OWL_NS+"intersectionOf",
+]);
+const PALETTE = [
+  "#e74c3c","#3498db","#2ecc71","#f39c12","#9b59b6",
+  "#1abc9c","#e67e22","#c0392b","#2980b9","#8e44ad",
+  "#16a085","#d35400","#f1c40f","#7f8c8d","#ff5722",
+];
+const IND_TYPE_COLORS = {{
+  "Terrain":"#27ae60","OpenTerrain":"#27ae60","ForestTerrain":"#27ae60",
+  "UrbanTerrain":"#27ae60","MountainTerrain":"#27ae60","DesertTerrain":"#27ae60",
+  "OperationType":"#e67e22","ManeuverForm":"#e67e22","FormOfManeuver":"#e67e22",
+  "Unit":"#9b59b6","ArmorUnit":"#9b59b6","InfantryUnit":"#9b59b6",
+  "AviationUnit":"#9b59b6","EngineerUnit":"#9b59b6","SpecialForcesUnit":"#9b59b6",
+  "TacticalUnit":"#9b59b6","DefensiveOperation":"#e91e63","OffensiveOperation":"#e91e63",
+}};
+
 const HAS_COMPARE = {has_compare};
 
-// Build property legend bar
-const propLegendEl = document.getElementById("prop-legend");
-const activePropLocals = new Set(GRAPH.prop_legend.map(p => p.local));
-GRAPH.prop_legend.forEach(p => {{
-  const chip = document.createElement("div");
-  chip.className = "prop-chip";
-  chip.dataset.local = p.local;
-  chip.innerHTML = `<span class="swatch" style="background:${{p.color}}"></span>${{p.local}}`;
-  chip.style.color = p.color;
-  chip.addEventListener("click", () => toggleProp(p.local, chip));
-  propLegendEl.appendChild(chip);
-}});
+// ---- Pre-baked data from Python ----
+const INIT_GRAPH = {init_graph_json};
+const INIT_STATS = {init_stats_json};
+const INIT_TITLE = {init_title_json};
 
-const svgEl = d3.select("#graph").append("svg")
-  .call(d3.zoom().scaleExtent([0.03, 8]).on("zoom", e => g.attr("transform", e.transform)));
-
-const g = svgEl.append("g");
-
-// Arrow markers for each color
-const defs = svgEl.append("defs");
-function addMarker(id, color) {{
-  defs.append("marker").attr("id", id)
-    .attr("viewBox","0 -4 8 8").attr("refX", 20).attr("refY", 0)
-    .attr("markerWidth", 5).attr("markerHeight", 5).attr("orient","auto")
-    .append("path").attr("d","M0,-4L8,0L0,4").attr("fill", color);
-}}
-addMarker("arrow-sub","#555");
-const allColors = [...new Set(GRAPH.links.filter(l=>l.kind!=="subclass").map(l=>l.color))];
-allColors.forEach((c,i) => addMarker("arrow-c"+i, c));
-const c2m = {{}};
-allColors.forEach((c,i) => c2m[c] = "arrow-c"+i);
-
-// Simulation
-const sim = d3.forceSimulation(GRAPH.nodes)
-  .force("link",      d3.forceLink(GRAPH.links).id(d=>d.id).distance(160))
-  .force("charge",    d3.forceManyBody().strength(-320))
-  .force("center",    d3.forceCenter(600, 400))
-  .force("collision", d3.forceCollide(20));
-
-// Links
-const link = g.append("g").selectAll("line")
-  .data(GRAPH.links).join("line")
-  .attr("class", d => "link " + d.kind)
-  .attr("stroke", d => d.color || "#555")
-  .attr("marker-end", d => d.kind==="subclass"
-    ? "url(#arrow-sub)"
-    : (c2m[d.color] ? "url(#"+c2m[d.color]+")" : ""));
-
-// Link labels
-const linkLabel = g.append("g").selectAll("text")
-  .data(GRAPH.links).join("text")
-  .attr("class","link-label")
-  .text(d => d.label);
-
-// Nodes
-const node = g.append("g").selectAll("g")
-  .data(GRAPH.nodes).join("g")
-  .attr("class", d => "node" + (d.type==="individual" ? " individual" : ""))
-  .call(d3.drag()
-    .on("start",(e,d)=>{{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }})
-    .on("drag", (e,d)=>{{ d.fx=e.x; d.fy=e.y; }})
-    .on("end",  (e,d)=>{{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }}))
-  .on("click", onNodeClick);
-
-function nodeColor(d) {{
-  if (d.type === "individual") return d.ind_color || "#f39c12";
-  if (HAS_COMPARE && d.in_gold !== null) return d.in_gold ? "#27ae60" : "#e74c3c";
-  return "#4a90d9";
-}}
-function nodeStroke(d) {{
-  if (d.type === "individual") return d3.color(d.ind_color || "#f39c12").darker(0.6);
-  if (HAS_COMPARE && d.in_gold !== null) return d.in_gold ? "#1e8449" : "#c0392b";
-  return "#2471a3";
-}}
-
-// Classes = circles, Individuals = diamonds
-node.each(function(d) {{
-  const n = d3.select(this);
-  if (d.type === "individual") {{
-    n.append("polygon")
-      .attr("points","0,-13 13,0 0,13 -13,0")
-      .attr("fill",   nodeColor(d))
-      .attr("stroke", nodeStroke(d))
-      .attr("stroke-width", 2);
-  }} else {{
-    n.append("circle")
-      .attr("r", 13)
-      .attr("fill",   nodeColor(d))
-      .attr("stroke", nodeStroke(d));
+// ---- Helpers ----
+function localName(uri) {{
+  for (const sep of ["#","/"]) {{
+    const idx = uri.lastIndexOf(sep);
+    if (idx >= 0) return uri.slice(idx + 1);
   }}
-}});
+  return uri;
+}}
+function isDomainUri(uri) {{
+  if (SKIP_URI.has(uri)) return false;
+  return !SKIP_NS.some(ns => uri.startsWith(ns));
+}}
+function indColor(types) {{
+  for (const t of types) {{
+    if (IND_TYPE_COLORS[t]) return IND_TYPE_COLORS[t];
+    for (const [k,v] of Object.entries(IND_TYPE_COLORS))
+      if (k.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(k.toLowerCase()))
+        return v;
+  }}
+  return "#f39c12";
+}}
 
-node.append("text").attr("dy","0.35em")
-  .text(d => d.label.length > 13 ? d.label.slice(0,12)+"…" : d.label);
+// ---- Browser-side TTL parser (N3.js) → graph data ----
+function parseTTLToGraphData(ttlText) {{
+  let quads;
+  try {{
+    quads = new N3.Parser().parse(ttlText);
+  }} catch(e) {{
+    showError("TTL parse error: " + e.message);
+    return null;
+  }}
+  const store = new N3.Store(quads);
 
-node.append("title")
-  .text(d => d.label + (d.type==="individual" ? " [Individual]" : " [Class]")
-    + (d.comment ? "\\n" + d.comment : ""));
+  const getLabel   = uri => store.getObjects(uri, RDFS_NS+"label",   null)[0]?.value || localName(uri);
+  const getComment = uri => store.getObjects(uri, RDFS_NS+"comment", null)[0]?.value || "";
+  const makeClass  = uri => ({{ id:uri, local:localName(uri), label:getLabel(uri),
+                                comment:getComment(uri), node_type:"class" }});
 
-sim.on("tick", () => {{
-  link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
-      .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
-  linkLabel.attr("x",d=>(d.source.x+d.target.x)/2)
-           .attr("y",d=>(d.source.y+d.target.y)/2);
-  node.attr("transform",d=>`translate(${{d.x}},${{d.y}})`);
-}});
+  // 1. Explicit classes
+  const classes = {{}};
+  for (const rdfType of [OWL_NS+"Class", RDFS_NS+"Class"]) {{
+    for (const q of store.getSubjects(RDF_NS+"type", rdfType, null)) {{
+      if (q.termType==="NamedNode" && isDomainUri(q.value))
+        classes[q.value] = makeClass(q.value);
+    }}
+  }}
+
+  // 2. Infer from rdfs:subClassOf
+  for (const q of store.getQuads(null, RDFS_NS+"subClassOf", null, null)) {{
+    for (const node of [q.subject, q.object]) {{
+      if (node.termType==="NamedNode" && isDomainUri(node.value) && !classes[node.value])
+        classes[node.value] = makeClass(node.value);
+    }}
+  }}
+
+  // 3. Named individuals
+  const individuals = {{}};
+  for (const q of store.getSubjects(RDF_NS+"type", OWL_NS+"NamedIndividual", null)) {{
+    if (q.termType !== "NamedNode") continue;
+    const uri = q.value;
+    const types = store.getObjects(uri, RDF_NS+"type", null)
+      .filter(o => o.value !== OWL_NS+"NamedIndividual")
+      .map(o => localName(o.value));
+    individuals[uri] = {{ id:uri, local:localName(uri), label:getLabel(uri),
+                          comment:getComment(uri), types, node_type:"individual" }};
+  }}
+
+  // 4. Explicit object properties
+  const objectProps = {{}};
+  for (const q of store.getSubjects(RDF_NS+"type", OWL_NS+"ObjectProperty", null)) {{
+    if (q.termType !== "NamedNode") continue;
+    const uri = q.value;
+    const domain = store.getObjects(uri, RDFS_NS+"domain", null)[0]?.value || "";
+    const range  = store.getObjects(uri, RDFS_NS+"range",  null)[0]?.value || "";
+    objectProps[uri] = {{ id:uri, local:localName(uri), label:getLabel(uri), domain, range }};
+  }}
+
+  // 5. Infer from rdfs:domain (without explicit owl:ObjectProperty typing)
+  for (const q of store.getQuads(null, RDFS_NS+"domain", null, null)) {{
+    const uri = q.subject.value;
+    if (q.subject.termType !== "NamedNode" || !isDomainUri(uri) || objectProps[uri]) continue;
+    const rangeNodes = store.getObjects(uri, RDFS_NS+"range", null);
+    const range = rangeNodes[0]?.value || "";
+    if (range.startsWith(XSD_NS)) continue; // datatype property
+    objectProps[uri] = {{ id:uri, local:localName(uri), label:getLabel(uri),
+                          domain:q.object.value, range }};
+  }}
+
+  // 6. Add domain/range targets to classes
+  for (const pd of Object.values(objectProps)) {{
+    for (const target of [pd.domain, pd.range]) {{
+      if (target && isDomainUri(target) && !classes[target])
+        classes[target] = makeClass(target);
+    }}
+  }}
+
+  // 7. Datatype properties
+  const datatypeProps = {{}};
+  for (const q of store.getSubjects(RDF_NS+"type", OWL_NS+"DatatypeProperty", null)) {{
+    if (q.termType !== "NamedNode") continue;
+    const uri = q.value;
+    datatypeProps[uri] = {{
+      id:uri, local:localName(uri), label:getLabel(uri),
+      domain: store.getObjects(uri, RDFS_NS+"domain", null)[0]?.value || "",
+      range:  store.getObjects(uri, RDFS_NS+"range",  null)[0]?.value || "",
+    }};
+  }}
+
+  // 8. subClassOf edges
+  const subclassEdges = [];
+  for (const q of store.getQuads(null, RDFS_NS+"subClassOf", null, null)) {{
+    const s = q.subject.value, o = q.object.value;
+    if (classes[s] && classes[o]) subclassEdges.push([s, o]);
+  }}
+
+  // 9. Property edges
+  const allNodes = {{...classes, ...individuals}};
+  const propEdges = [];
+  const seenEdges = new Set();
+
+  // Schema edges (from rdfs:domain → rdfs:range)
+  for (const [pid, pd] of Object.entries(objectProps)) {{
+    const domainNodes = store.getObjects(pid, RDFS_NS+"domain", null);
+    const dStr = domainNodes[0]?.value || pd.domain;
+    if (!dStr || !allNodes[dStr]) continue;
+    for (const rn of store.getObjects(pid, RDFS_NS+"range", null)) {{
+      if (rn.termType !== "NamedNode") continue;
+      const rStr = rn.value;
+      if (!allNodes[rStr]) continue;
+      const key = dStr+"||"+rStr+"||"+pd.local;
+      if (!seenEdges.has(key)) {{
+        seenEdges.add(key);
+        propEdges.push({{ source:dStr, target:rStr, label:pd.label, local:pd.local, edge_kind:"schema" }});
+      }}
+    }}
+  }}
+
+  // Instance edges (actual triples between known nodes)
+  for (const q of store.getQuads(null, null, null, null)) {{
+    if (q.subject.termType!=="NamedNode" || q.predicate.termType!=="NamedNode"
+        || q.object.termType!=="NamedNode") continue;
+    const s=q.subject.value, p=q.predicate.value, o=q.object.value;
+    if (SKIP_PROPS.has(p)) continue;
+    if (allNodes[s] && allNodes[o]) {{
+      const local = localName(p);
+      const label = getLabel(p);
+      const key = s+"||"+o+"||"+local;
+      if (!seenEdges.has(key)) {{
+        seenEdges.add(key);
+        propEdges.push({{ source:s, target:o, label, local, edge_kind:"instance" }});
+      }}
+    }}
+  }}
+
+  // Build D3 graph data
+  const nodes=[], links=[];
+  const nodeIds = new Set();
+
+  for (const [uri, cls] of Object.entries(classes)) {{
+    const dtProps = Object.values(datatypeProps)
+      .filter(p=>p.domain===uri)
+      .map(p=>`${{p.label}} (${{p.range.split(":").pop()}})`);
+    nodes.push({{ id:uri, label:cls.label, local:cls.local, comment:cls.comment,
+                  dt_props:dtProps, in_gold:null, type:"class" }});
+    nodeIds.add(uri);
+  }}
+
+  for (const [uri, ind] of Object.entries(individuals)) {{
+    const types = ind.types || [];
+    nodes.push({{ id:uri, label:ind.label, local:ind.local, comment:ind.comment,
+                  dt_props:[], in_gold:null, type:"individual",
+                  ind_types:types, ind_color:indColor(types) }});
+    nodeIds.add(uri);
+  }}
+
+  for (const [s,t] of subclassEdges) {{
+    if (nodeIds.has(s) && nodeIds.has(t))
+      links.push({{ source:s, target:t, label:"subClassOf", kind:"subclass" }});
+  }}
+
+  const propColors = {{}};
+  for (const edge of propEdges) {{
+    const {{source:src, target:tgt, label, local, edge_kind:ek}} = edge;
+    if (!nodeIds.has(src) || !nodeIds.has(tgt)) continue;
+    if (!propColors[local]) propColors[local] = PALETTE[Object.keys(propColors).length % PALETTE.length];
+    links.push({{ source:src, target:tgt, label, kind:ek, color:propColors[local], local }});
+  }}
+
+  const prop_legend = Object.entries(propColors).map(([local,color])=>({{local,color}}));
+
+  const stats = {{
+    n_classes:       Object.keys(classes).length,
+    n_individuals:   Object.keys(individuals).length,
+    n_object_props:  Object.keys(objectProps).length,
+    n_datatype_props:Object.keys(datatypeProps).length,
+    n_subclass:      subclassEdges.length,
+    n_prop_edges:    propEdges.length,
+  }};
+
+  return {{ nodes, links, prop_legend, stats }};
+}}
+
+// ---- D3 visualization state ----
+let sim, link, linkLabel, node, svgEl, g, activePropLocals;
+const hiddenKinds = new Set();
+
+function updateStatsBar(stats, title) {{
+  document.getElementById("title-el").textContent = title;
+  document.getElementById("stats-bar").innerHTML = `
+    <div class="stat"><span class="stat-num">${{stats.n_classes}}</span><br>Classes</div>
+    <div class="stat"><span class="stat-num">${{stats.n_individuals}}</span><br>Individuals</div>
+    <div class="stat"><span class="stat-num">${{stats.n_object_props}}</span><br>Obj Props</div>
+    <div class="stat"><span class="stat-num">${{stats.n_datatype_props}}</span><br>Data Props</div>
+    <div class="stat"><span class="stat-num">${{stats.n_subclass}}</span><br>SubClass</div>
+    <div class="stat"><span class="stat-num">${{stats.n_prop_edges}}</span><br>Prop Edges</div>
+  `;
+}}
+
+function initViz(graphData, stats, title) {{
+  updateStatsBar(stats, title);
+
+  // Clear previous
+  d3.select("#graph svg").remove();
+  d3.select("#prop-legend").selectAll(".prop-chip").remove();
+  hiddenKinds.clear();
+  document.getElementById("sidebar").style.display = "none";
+  document.getElementById("search").value = "";
+
+  // Property legend chips
+  const propLegendEl = document.getElementById("prop-legend");
+  activePropLocals = new Set(graphData.prop_legend.map(p => p.local));
+  graphData.prop_legend.forEach(p => {{
+    const chip = document.createElement("div");
+    chip.className = "prop-chip";
+    chip.dataset.local = p.local;
+    chip.innerHTML = `<span class="swatch" style="background:${{p.color}}"></span>${{p.local}}`;
+    chip.style.color = p.color;
+    chip.addEventListener("click", () => toggleProp(p.local, chip));
+    propLegendEl.appendChild(chip);
+  }});
+
+  // SVG + zoom
+  svgEl = d3.select("#graph").append("svg")
+    .call(d3.zoom().scaleExtent([0.03, 8]).on("zoom", e => g.attr("transform", e.transform)));
+  g = svgEl.append("g");
+
+  // Arrow markers
+  const defs = svgEl.append("defs");
+  function addMarker(id, color) {{
+    defs.append("marker").attr("id", id)
+      .attr("viewBox","0 -4 8 8").attr("refX",20).attr("refY",0)
+      .attr("markerWidth",5).attr("markerHeight",5).attr("orient","auto")
+      .append("path").attr("d","M0,-4L8,0L0,4").attr("fill",color);
+  }}
+  addMarker("arrow-sub","#555");
+  const allColors = [...new Set(graphData.links.filter(l=>l.kind!=="subclass").map(l=>l.color).filter(Boolean))];
+  allColors.forEach((c,i) => addMarker("arrow-c"+i, c));
+  const c2m = {{}};
+  allColors.forEach((c,i) => c2m[c] = "arrow-c"+i);
+
+  // Simulation
+  const w = document.getElementById("graph").clientWidth  || 1200;
+  const h = document.getElementById("graph").clientHeight || 700;
+  const linkDist = +document.getElementById("link-dist").value;
+  const charge   = +document.getElementById("charge").value;
+
+  sim = d3.forceSimulation(graphData.nodes)
+    .force("link",      d3.forceLink(graphData.links).id(d=>d.id).distance(linkDist))
+    .force("charge",    d3.forceManyBody().strength(charge))
+    .force("center",    d3.forceCenter(w/2, h/2))
+    .force("collision", d3.forceCollide(20));
+
+  // Links
+  link = g.append("g").selectAll("line")
+    .data(graphData.links).join("line")
+    .attr("class", d => "link "+d.kind)
+    .attr("stroke", d => d.color || "#555")
+    .attr("marker-end", d => d.kind==="subclass"
+      ? "url(#arrow-sub)"
+      : (c2m[d.color] ? "url(#"+c2m[d.color]+")" : ""));
+
+  // Link labels
+  linkLabel = g.append("g").selectAll("text")
+    .data(graphData.links).join("text")
+    .attr("class","link-label")
+    .text(d => d.label);
+
+  // Nodes
+  node = g.append("g").selectAll("g")
+    .data(graphData.nodes).join("g")
+    .attr("class", d => "node"+(d.type==="individual" ? " individual" : ""))
+    .call(d3.drag()
+      .on("start",(e,d)=>{{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }})
+      .on("drag", (e,d)=>{{ d.fx=e.x; d.fy=e.y; }})
+      .on("end",  (e,d)=>{{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }}))
+    .on("click", onNodeClick);
+
+  function nodeColor(d) {{
+    if (d.type==="individual") return d.ind_color || "#f39c12";
+    if (HAS_COMPARE && d.in_gold!==null) return d.in_gold ? "#27ae60" : "#e74c3c";
+    return "#4a90d9";
+  }}
+  function nodeStroke(d) {{
+    if (d.type==="individual") return d3.color(d.ind_color||"#f39c12").darker(0.6);
+    if (HAS_COMPARE && d.in_gold!==null) return d.in_gold ? "#1e8449" : "#c0392b";
+    return "#2471a3";
+  }}
+
+  node.each(function(d) {{
+    const n = d3.select(this);
+    if (d.type==="individual") {{
+      n.append("polygon").attr("points","0,-13 13,0 0,13 -13,0")
+        .attr("fill", nodeColor(d)).attr("stroke", nodeStroke(d)).attr("stroke-width",2);
+    }} else {{
+      n.append("circle").attr("r",13)
+        .attr("fill", nodeColor(d)).attr("stroke", nodeStroke(d));
+    }}
+  }});
+
+  node.append("text").attr("dy","0.35em")
+    .text(d => d.label.length>13 ? d.label.slice(0,12)+"…" : d.label);
+  node.append("title")
+    .text(d => d.label+(d.type==="individual"?" [Individual]":" [Class]")
+      +(d.comment?"\\n"+d.comment:""));
+
+  sim.on("tick", () => {{
+    link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+        .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+    linkLabel.attr("x",d=>(d.source.x+d.target.x)/2)
+             .attr("y",d=>(d.source.y+d.target.y)/2);
+    node.attr("transform",d=>`translate(${{d.x}},${{d.y}})`);
+  }});
+
+  applyEdgeKindVisibility();
+}}
 
 // ---- Controls ----
 document.getElementById("link-dist").addEventListener("input", function() {{
-  sim.force("link").distance(+this.value); sim.alpha(0.5).restart();
+  if (sim) {{ sim.force("link").distance(+this.value); sim.alpha(0.5).restart(); }}
 }});
 document.getElementById("charge").addEventListener("input", function() {{
-  sim.force("charge").strength(+this.value); sim.alpha(0.5).restart();
+  if (sim) {{ sim.force("charge").strength(+this.value); sim.alpha(0.5).restart(); }}
 }});
 document.getElementById("show-labels").addEventListener("change", function() {{
-  linkLabel.style("display", this.checked ? null : "none");
+  if (linkLabel) linkLabel.style("display", this.checked ? null : "none");
 }});
 
 function applyEdgeKindVisibility() {{
+  if (!link) return;
   const showSub  = document.getElementById("show-subclass").checked;
   const showInst = document.getElementById("show-instance").checked;
   const showSch  = document.getElementById("show-schema").checked;
@@ -775,17 +1049,15 @@ function applyEdgeKindVisibility() {{
     if (d.kind==="subclass" && !showSub)  return "none";
     if (d.kind==="instance" && !showInst) return "none";
     if (d.kind==="schema"   && !showSch)  return "none";
-    // check prop filter
-    if (d.local && !activePropLocals.has(d.local)) return "none";
+    if (d.local && activePropLocals && !activePropLocals.has(d.local)) return "none";
     return null;
   }});
   linkLabel.style("display", d => {{
-    const lv = document.getElementById("show-labels").checked;
-    if (!lv) return "none";
+    if (!document.getElementById("show-labels").checked) return "none";
     if (d.kind==="subclass" && !showSub)  return "none";
     if (d.kind==="instance" && !showInst) return "none";
     if (d.kind==="schema"   && !showSch)  return "none";
-    if (d.local && !activePropLocals.has(d.local)) return "none";
+    if (d.local && activePropLocals && !activePropLocals.has(d.local)) return "none";
     return null;
   }});
 }}
@@ -793,29 +1065,24 @@ function applyEdgeKindVisibility() {{
   document.getElementById(id).addEventListener("change", applyEdgeKindVisibility));
 
 document.getElementById("show-individuals").addEventListener("change", function() {{
+  if (!node) return;
   node.filter(d=>d.type==="individual").style("display", this.checked ? null : "none");
   link.filter(d => {{
-    const sn = GRAPH.nodes.find(n=>n.id===(d.source.id||d.source));
-    const tn = GRAPH.nodes.find(n=>n.id===(d.target.id||d.target));
+    const sn = d.source, tn = d.target;
     return (sn?.type==="individual" || tn?.type==="individual");
   }}).style("display", this.checked ? null : "none");
 }});
 
-// Toggle helpers
-const hiddenKinds    = new Set();
-const hiddenIndTypes = new Set();
-
 function toggleEdgeKind(kind) {{
-  const id = kind==="instance" ? "show-instance" : kind==="schema" ? "show-schema" : "show-subclass";
+  const id = kind==="instance"?"show-instance":kind==="schema"?"show-schema":"show-subclass";
   const cb = document.getElementById(id);
   cb.checked = !cb.checked;
   applyEdgeKindVisibility();
 }}
 
 function toggleNodeType(type, subtype) {{
+  if (!node) return;
   if (type==="class") {{
-    const cb = document.getElementById("show-individuals");
-    // toggle by hiding class nodes — use a flag
     if (!hiddenKinds.has("class")) {{
       hiddenKinds.add("class");
       node.filter(d=>d.type==="class").style("display","none");
@@ -827,43 +1094,38 @@ function toggleNodeType(type, subtype) {{
     const key = "ind_"+subtype.toLowerCase();
     if (!hiddenKinds.has(key)) {{
       hiddenKinds.add(key);
-      node.filter(d => d.type==="individual" &&
-        d.ind_types.some(t=>t.toLowerCase().includes(subtype.toLowerCase())))
+      node.filter(d=>d.type==="individual"&&d.ind_types.some(t=>t.toLowerCase().includes(subtype.toLowerCase())))
         .style("display","none");
     }} else {{
       hiddenKinds.delete(key);
-      node.filter(d => d.type==="individual" &&
-        d.ind_types.some(t=>t.toLowerCase().includes(subtype.toLowerCase())))
+      node.filter(d=>d.type==="individual"&&d.ind_types.some(t=>t.toLowerCase().includes(subtype.toLowerCase())))
         .style("display",null);
     }}
   }}
 }}
 
 function toggleProp(local, chipEl) {{
-  if (activePropLocals.has(local)) {{
-    activePropLocals.delete(local);
-    chipEl.classList.add("inactive");
-  }} else {{
-    activePropLocals.add(local);
-    chipEl.classList.remove("inactive");
-  }}
+  if (activePropLocals.has(local)) {{ activePropLocals.delete(local); chipEl.classList.add("inactive"); }}
+  else {{ activePropLocals.add(local); chipEl.classList.remove("inactive"); }}
   applyEdgeKindVisibility();
 }}
 
 // Search
 document.getElementById("search").addEventListener("input", function() {{
+  if (!node) return;
   const q = this.value.trim().toLowerCase();
   if (!q) {{ unhighlight(); return; }}
-  const matched = new Set(GRAPH.nodes
-    .filter(d => d.label.toLowerCase().includes(q) || d.local.toLowerCase().includes(q))
-    .map(d => d.id));
-  node.classed("highlighted", d => matched.has(d.id))
-      .classed("dimmed", d => !matched.has(d.id));
-  link.classed("dimmed", d => !matched.has(d.source.id||d.source) && !matched.has(d.target.id||d.target));
-  linkLabel.classed("dimmed", d => !matched.has(d.source.id||d.source) && !matched.has(d.target.id||d.target));
+  const matched = new Set(
+    (node.data ? node.data() : [])
+      .filter(d => d.label.toLowerCase().includes(q) || d.local.toLowerCase().includes(q))
+      .map(d => d.id));
+  node.classed("highlighted", d=>matched.has(d.id)).classed("dimmed", d=>!matched.has(d.id));
+  link.classed("dimmed", d=>!matched.has(d.source.id||d.source)&&!matched.has(d.target.id||d.target));
+  linkLabel.classed("dimmed", d=>!matched.has(d.source.id||d.source)&&!matched.has(d.target.id||d.target));
 }});
 
 function unhighlight() {{
+  if (!node) return;
   node.classed("highlighted",false).classed("dimmed",false);
   link.classed("dimmed",false);
   linkLabel.classed("dimmed",false);
@@ -872,69 +1134,91 @@ function unhighlight() {{
 // Sidebar
 function onNodeClick(event, d) {{
   event.stopPropagation();
-  const sb = document.getElementById("sidebar");
-  sb.style.display = "block";
+  document.getElementById("sidebar").style.display = "block";
   document.getElementById("sb-title").textContent = d.label;
-
-  const cl = GRAPH.links.filter(l =>
+  const cl = (link.data ? link.data() : []).filter(l =>
     (l.source.id||l.source)===d.id || (l.target.id||l.target)===d.id);
-
-  const nn = id => GRAPH.nodes.find(n=>n.id===id)?.label || "?";
-
-  const parents  = cl.filter(l=>l.kind==="subclass"&&(l.source.id||l.source)===d.id)
-    .map(l=>nn(l.target.id||l.target));
-  const children = cl.filter(l=>l.kind==="subclass"&&(l.target.id||l.target)===d.id)
-    .map(l=>nn(l.source.id||l.source));
-  const outInst  = cl.filter(l=>l.kind==="instance"&&(l.source.id||l.source)===d.id)
-    .map(l=>`<span style="color:${{l.color}}">${{l.label}}</span> → ${{nn(l.target.id||l.target)}}`);
-  const inInst   = cl.filter(l=>l.kind==="instance"&&(l.target.id||l.target)===d.id)
-    .map(l=>`${{nn(l.source.id||l.source)}} → <span style="color:${{l.color}}">${{l.label}}</span>`);
-  const outSch   = cl.filter(l=>l.kind==="schema"&&(l.source.id||l.source)===d.id)
-    .map(l=>`<span style="color:${{l.color}}">${{l.label}}</span> → ${{nn(l.target.id||l.target)}}`);
-  const inSch    = cl.filter(l=>l.kind==="schema"&&(l.target.id||l.target)===d.id)
-    .map(l=>`${{nn(l.source.id||l.source)}} → <span style="color:${{l.color}}">${{l.label}}</span>`);
-
-  const typeBadge = d.type === "individual"
-    ? `<span class="badge" style="background:#333;color:#f39c12">◆ Individual</span>`
-      + (d.ind_types||[]).map(t=>`<span class="badge" style="background:#1a2a1a;color:#27ae60">${{t}}</span>`).join("")
+  const allNodeData = node.data ? node.data() : [];
+  const nn = id => allNodeData.find(n=>n.id===id)?.label||"?";
+  const parents  = cl.filter(l=>l.kind==="subclass"&&(l.source.id||l.source)===d.id).map(l=>nn(l.target.id||l.target));
+  const children = cl.filter(l=>l.kind==="subclass"&&(l.target.id||l.target)===d.id).map(l=>nn(l.source.id||l.source));
+  const outInst  = cl.filter(l=>l.kind==="instance"&&(l.source.id||l.source)===d.id).map(l=>`<span style="color:${{l.color}}">${{l.label}}</span> → ${{nn(l.target.id||l.target)}}`);
+  const inInst   = cl.filter(l=>l.kind==="instance"&&(l.target.id||l.target)===d.id).map(l=>`${{nn(l.source.id||l.source)}} → <span style="color:${{l.color}}">${{l.label}}</span>`);
+  const outSch   = cl.filter(l=>l.kind==="schema"&&(l.source.id||l.source)===d.id).map(l=>`<span style="color:${{l.color}}">${{l.label}}</span> → ${{nn(l.target.id||l.target)}}`);
+  const inSch    = cl.filter(l=>l.kind==="schema"&&(l.target.id||l.target)===d.id).map(l=>`${{nn(l.source.id||l.source)}} → <span style="color:${{l.color}}">${{l.label}}</span>`);
+  const typeBadge = d.type==="individual"
+    ? `<span class="badge" style="background:#333;color:#f39c12">◆ Individual</span>`+(d.ind_types||[]).map(t=>`<span class="badge" style="background:#1a2a1a;color:#27ae60">${{t}}</span>`).join("")
     : `<span class="badge" style="background:#0f3460;color:#7eb8f7">● Class</span>`;
-
-  let html = `<div style="font-size:10px;color:#7eb8f7;margin-bottom:5px">:<b>${{d.local}}</b></div>`;
+  let html=`<div style="font-size:10px;color:#7eb8f7;margin-bottom:5px">:<b>${{d.local}}</b></div>`;
   html += typeBadge;
-  if (HAS_COMPARE && d.type==="class") {{
-    html += d.in_gold
-      ? `<span class="badge" style="background:#1e8449">✓ In Gold</span>`
-      : `<span class="badge" style="background:#922b21">✗ Not in Gold</span>`;
-  }}
-  if (d.comment)
-    html += `<p style="font-size:9px;color:#aaa;margin:7px 0">${{d.comment}}</p>`;
-  if (parents.length)
-    html += `<div class="prop-list" style="margin-top:7px"><b>subClassOf:</b><ul>${{parents.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-  if (children.length)
-    html += `<div class="prop-list"><b>Subclasses:</b><ul>${{children.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-  if (outInst.length)
-    html += `<div class="prop-list"><b>Instance props out:</b><ul>${{outInst.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-  if (inInst.length)
-    html += `<div class="prop-list"><b>Instance props in:</b><ul>${{inInst.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-  if (outSch.length)
-    html += `<div class="prop-list"><b>Schema props out:</b><ul>${{outSch.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-  if (inSch.length)
-    html += `<div class="prop-list"><b>Schema props in:</b><ul>${{inSch.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-  if (d.dt_props?.length)
-    html += `<div class="prop-list"><b>Data props:</b><ul>${{d.dt_props.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
-
+  if (HAS_COMPARE && d.type==="class")
+    html += d.in_gold?`<span class="badge" style="background:#1e8449">✓ In Gold</span>`:`<span class="badge" style="background:#922b21">✗ Not in Gold</span>`;
+  if (d.comment) html+=`<p style="font-size:9px;color:#aaa;margin:7px 0">${{d.comment}}</p>`;
+  if (parents.length)  html+=`<div class="prop-list" style="margin-top:7px"><b>subClassOf:</b><ul>${{parents.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
+  if (children.length) html+=`<div class="prop-list"><b>Subclasses:</b><ul>${{children.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
+  if (outInst.length)  html+=`<div class="prop-list"><b>Instance props out:</b><ul>${{outInst.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
+  if (inInst.length)   html+=`<div class="prop-list"><b>Instance props in:</b><ul>${{inInst.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
+  if (outSch.length)   html+=`<div class="prop-list"><b>Schema props out:</b><ul>${{outSch.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
+  if (inSch.length)    html+=`<div class="prop-list"><b>Schema props in:</b><ul>${{inSch.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
+  if (d.dt_props?.length) html+=`<div class="prop-list"><b>Data props:</b><ul>${{d.dt_props.map(p=>`<li>${{p}}</li>`).join("")}}</ul></div>`;
   document.getElementById("sb-body").innerHTML = html;
-
-  const conn = new Set([d.id,
-    ...cl.map(l=>l.source.id||l.source),
-    ...cl.map(l=>l.target.id||l.target)]);
-  node.classed("highlighted", n=>conn.has(n.id)).classed("dimmed", n=>!conn.has(n.id));
-  link.classed("dimmed", l=>!conn.has(l.source.id||l.source)||!conn.has(l.target.id||l.target));
-  linkLabel.classed("dimmed", l=>!conn.has(l.source.id||l.source)||!conn.has(l.target.id||l.target));
+  const conn = new Set([d.id,...cl.map(l=>l.source.id||l.source),...cl.map(l=>l.target.id||l.target)]);
+  node.classed("highlighted",n=>conn.has(n.id)).classed("dimmed",n=>!conn.has(n.id));
+  link.classed("dimmed",l=>!conn.has(l.source.id||l.source)||!conn.has(l.target.id||l.target));
+  linkLabel.classed("dimmed",l=>!conn.has(l.source.id||l.source)||!conn.has(l.target.id||l.target));
 }}
 
+svgEl && svgEl.on("click", () => {{
+  document.getElementById("sidebar").style.display="none";
+  unhighlight();
+}});
+
+// ---- Error display ----
+function showError(msg) {{
+  const el = document.getElementById("parse-error");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display="none", 6000);
+}}
+
+// ---- File input handler ----
+function loadTTLFile(file) {{
+  const reader = new FileReader();
+  reader.onload = evt => {{
+    const result = parseTTLToGraphData(evt.target.result);
+    if (result) {{
+      const {{stats, ...graphData}} = result;
+      initViz(graphData, stats, file.name);
+    }}
+  }};
+  reader.readAsText(file);
+}}
+
+document.getElementById("ttl-file-input").addEventListener("change", function() {{
+  if (this.files[0]) loadTTLFile(this.files[0]);
+  this.value = "";
+}});
+
+// Drag-and-drop anywhere on the page
+const dropOverlay = document.getElementById("drop-overlay");
+document.body.addEventListener("dragenter", e => {{
+  if ([...e.dataTransfer.types].includes("Files")) dropOverlay.classList.add("active");
+}});
+dropOverlay.addEventListener("dragleave", () => dropOverlay.classList.remove("active"));
+dropOverlay.addEventListener("dragover", e => e.preventDefault());
+dropOverlay.addEventListener("drop", e => {{
+  e.preventDefault();
+  dropOverlay.classList.remove("active");
+  const file = [...e.dataTransfer.files].find(f => /\.(ttl|turtle|owl)$/i.test(f.name));
+  if (file) loadTTLFile(file);
+  else showError("Please drop a .ttl or .turtle file");
+}});
+
+// ---- Boot with pre-baked data ----
+initViz(INIT_GRAPH, INIT_STATS, INIT_TITLE);
+
 svgEl.on("click", () => {{
-  document.getElementById("sidebar").style.display = "none";
+  document.getElementById("sidebar").style.display="none";
   unhighlight();
 }});
 </script>
@@ -984,11 +1268,23 @@ def show_in_colab(html: str, height: int = 800):
 
 def main():
     parser = argparse.ArgumentParser(description="Interactive ontology visualizer")
-    parser.add_argument("input", help=".ttl file or JSON result file")
+    parser.add_argument("input", nargs="?", default=None,
+                        help=".ttl file or JSON result file (omit to open blank viewer)")
     parser.add_argument("--output", "-o", default=None)
     parser.add_argument("--compare", "-c", default=None, help="Gold standard TTL")
     parser.add_argument("--title",   "-t", default=None)
     args = parser.parse_args()
+
+    if args.input is None:
+        # No file given → emit a blank viewer that accepts drag-and-drop
+        html = _blank_viewer_html()
+        out_path = args.output or "ontology_viz.html"
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"Saved blank viewer: {out_path}")
+        print(f"Open: file://{os.path.abspath(out_path)}")
+        print("Then drag & drop any .ttl file onto the page.")
+        return
 
     if not os.path.exists(args.input):
         print(f"ERROR: File not found: {args.input}"); sys.exit(1)
@@ -1001,6 +1297,24 @@ def main():
         f.write(html)
     print(f"Saved:  {out_path}")
     print(f"Open:   file://{os.path.abspath(out_path)}")
+
+
+def _blank_viewer_html() -> str:
+    """Minimal HTML viewer with no pre-loaded data — accepts TTL via drag-and-drop."""
+    empty_graph = json.dumps({"nodes": [], "links": [], "prop_legend": []})
+    empty_stats = json.dumps({"n_classes":0,"n_individuals":0,"n_object_props":0,
+                               "n_datatype_props":0,"n_subclass":0,"n_prop_edges":0})
+    empty_title = json.dumps("Drop a TTL file to visualize")
+    # Reuse the main template with empty pre-baked data
+    # (easiest: just call visualize_to_html with a dummy empty TTL)
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".ttl", mode="w", delete=False) as f:
+        f.write("@prefix owl: <http://www.w3.org/2002/07/owl#> .\n")
+        tmp = f.name
+    try:
+        return visualize_to_html(tmp, title="Drop a TTL file to visualize")
+    finally:
+        os.unlink(tmp)
 
 
 if __name__ == "__main__":
