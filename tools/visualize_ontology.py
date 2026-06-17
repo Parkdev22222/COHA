@@ -339,8 +339,10 @@ def visualize_to_html(
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }}
+  body, html {{ height: 100%; }}
+  #coha-root {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                background: #1a1a2e; color: #eee;
+                height: 100%; display: flex; flex-direction: column; }}
   #header {{ background: #16213e; padding: 10px 20px; display: flex; align-items: center;
              gap: 20px; border-bottom: 1px solid #0f3460; flex-shrink: 0; }}
   #header h1 {{ font-size: 16px; color: #e0e0ff; white-space: nowrap; }}
@@ -359,9 +361,9 @@ def visualize_to_html(
   #controls input[type=range] {{ width: 80px; }}
   #search {{ background: #0f3460; border: 1px solid #4a90d9; color: #eee;
              padding: 3px 8px; border-radius: 4px; font-size: 12px; width: 180px; }}
-  #main {{ display: flex; flex: 1; overflow: hidden; }}
-  #graph {{ flex: 1; overflow: hidden; }}
-  svg {{ width: 100%; height: 100%; }}
+  #main {{ display: flex; flex: 1; overflow: hidden; min-height: 0; }}
+  #graph {{ flex: 1; overflow: hidden; min-height: 0; }}
+  svg {{ width: 100%; height: 100%; display: block; }}
   #sidebar {{ width: 260px; background: #16213e; border-left: 1px solid #0f3460;
               overflow-y: auto; padding: 12px; flex-shrink: 0; display: none; }}
   #sidebar h3 {{ color: #7eb8f7; font-size: 14px; margin-bottom: 8px; }}
@@ -383,6 +385,7 @@ def visualize_to_html(
 </style>
 </head>
 <body>
+<div id="coha-root">
 <div id="header">
   <h1>{display_title}</h1>
   <div class="stats">{stats_html}</div>
@@ -405,6 +408,7 @@ def visualize_to_html(
     <h3 id="sb-title"></h3>
     <div id="sb-body"></div>
   </div>
+</div>
 </div>
 
 <script>
@@ -585,6 +589,7 @@ svg.on("click", () => {{
 </script>
 </body>
 </html>"""
+
     return html
 
 
@@ -632,12 +637,12 @@ def show_in_colab(html: str, height: int = 800):
     """Display HTML visualization inline in a Colab notebook.
 
     Colab's CSP blocks external CDN scripts, so D3.js is downloaded once,
-    cached locally, and embedded inline. The full-page HTML is converted to
-    a fragment (style + d3 + body content) for safe injection into the cell.
+    cached locally, and embedded inline. The HTML is rendered as a fragment:
+    style → inline D3 → #coha-root div (with explicit height) + graph script.
     """
     from IPython.display import display, HTML
 
-    # 1. Inline D3.js so Colab CSP doesn't block it
+    # 1. Inline D3.js (CDN blocked by Colab CSP)
     d3_src = _get_d3_js()
     d3_tag = f"<script>{d3_src}</script>" if d3_src else ""
 
@@ -645,16 +650,22 @@ def show_in_colab(html: str, height: int = 800):
     style_m = re.search(r"<style>(.*?)</style>", html, re.DOTALL)
     style_block = f"<style>{style_m.group(1)}</style>" if style_m else ""
 
-    # 3. Extract <body> content (already contains graph divs + graph <script> at end)
-    body_m = re.search(r"<body[^>]*>(.*?)</body>", html, re.DOTALL)
-    body_content = body_m.group(1) if body_m else html
+    # 3. Extract #coha-root div (contains header/controls/graph divs)
+    root_m = re.search(r'(<div id="coha-root">.*?</div>)\s*\n\s*<script', html, re.DOTALL)
+    root_html = root_m.group(1) if root_m else ""
 
-    # Inject: style → D3 (must come before graph script) → body content
+    # 4. Extract inline graph <script> (the D3 code, not the CDN tag)
+    scripts = re.findall(r"<script(?!\s+src)[^>]*>(.*?)</script>", html, re.DOTALL)
+    graph_script = "\n".join(s for s in scripts if "GRAPH" in s or "forceSimulation" in s)
+
+    # Override #coha-root height so flex chain works inside Colab cell
+    height_override = f"<style>#coha-root{{height:{height}px!important}}</style>"
+
     fragment = f"""{style_block}
+{height_override}
 {d3_tag}
-<div style="height:{height}px;width:100%;overflow:hidden;background:#1a1a2e">
-{body_content}
-</div>"""
+{root_html}
+<script>{graph_script}</script>"""
     display(HTML(fragment))
 
 
