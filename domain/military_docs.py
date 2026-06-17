@@ -289,6 +289,119 @@ As a division G3 (operations officer), I need the agent to recommend task organi
 terrain, enemy, and mission requirements -- following combined arms doctrine.
 """
 
+
+# ---------------------------------------------------------------------------
+# PDF-based user story builder
+# ---------------------------------------------------------------------------
+
+def _build_user_stories_from_pdf(pdf_path: str) -> "str | None":
+    """Build enriched user stories from ADP 3-90 PDF chapter sections.
+
+    Each user story gets a 'Doctrinal Context' passage extracted directly from
+    the corresponding ADP 3-90 chapter.  Returns None when fitz is unavailable
+    or the PDF cannot be opened.
+
+    Chapter mapping:
+      US-1 -> Ch.3  The Offense
+      US-2 -> Ch.4  The Defense
+      US-3 -> Ch.1  Tactical Fundamentals
+      US-4 -> Ch.5  Enabling Operations
+      US-5 -> Ch.2  Common Tactical Concepts and Echelons
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        _logger.debug("PyMuPDF not installed -- skipping PDF-based user stories")
+        return None
+
+    import re as _re
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as exc:
+        _logger.warning(f"Cannot open PDF for user stories: {exc}")
+        return None
+
+    def _extract(start_page: int, end_page: int) -> str:
+        """Extract and clean text from 1-indexed page range."""
+        parts = []
+        for pg in range(start_page - 1, min(end_page, len(doc))):
+            parts.append(doc[pg].get_text())
+        raw = " ".join(parts)
+        # Remove running page headers, e.g. '31 July 2019 ADP 3-90 3-1'
+        raw = _re.sub(r"\d{1,2} \w+ \d{4}\s+ADP 3-90\s+\d+-\d+", "", raw)
+        return _re.sub(r"\s+", " ", raw).strip()
+
+    def _trim(text: str, max_chars: int = 1400) -> str:
+        if len(text) <= max_chars:
+            return text
+        # Break at a word boundary
+        return text[:max_chars].rsplit(" ", 1)[0] + " [...]"
+
+    # Page ranges from ADP 3-90 (31 July 2019) table of contents
+    ch1 = _trim(_extract(11, 18))   # Tactical Fundamentals
+    ch2 = _trim(_extract(19, 40))   # Common Tactical Concepts and Echelons
+    ch3 = _trim(_extract(41, 60))   # The Offense
+    ch4 = _trim(_extract(61, 80))   # The Defense
+    ch5 = _trim(_extract(81, 86))   # Enabling Operations
+
+    return f"""## User Stories for Military Tactical Decision Support Agent
+(Doctrinal context sourced directly from ADP 3-90, 31 July 2019)
+
+US-1 (Offensive Operations Planning):
+As a battalion S3 (operations officer), I need the agent to recommend a form of
+maneuver and type of offensive operation given the enemy disposition, terrain, and
+available forces, so that the commander can execute an effective attack that leverages
+doctrinal offensive principles (audacity, concentration, surprise, tempo).
+
+Doctrinal Context (ADP 3-90, Chapter 3 -- The Offense):
+{ch3}
+
+---
+
+US-2 (Defensive Operations Planning):
+As a brigade S3 (operations officer), I need the agent to recommend a type of
+defensive operation (area defense, mobile defense, or retrograde) and identify
+key defensive planning considerations given the mission variables, so that the
+commander can successfully defeat or delay the enemy attack.
+
+Doctrinal Context (ADP 3-90, Chapter 4 -- The Defense):
+{ch4}
+
+---
+
+US-3 (Tactical Decision-Making):
+As a company commander, I need the agent to evaluate a tactical problem using the
+art and science of tactics -- weighing risk, uncertainty, and available means --
+and recommend whether to conduct a hasty or deliberate operation and which
+warfighting functions to prioritize.
+
+Doctrinal Context (ADP 3-90, Chapter 1 -- Tactical Fundamentals):
+{ch1}
+
+---
+
+US-4 (Enabling Operations):
+As a battalion executive officer (XO), I need the agent to determine which enabling
+operations (reconnaissance, security, troop movement, relief in place, or passage
+of lines) are required to set conditions for the decisive operation, so that the
+main effort can be supported and protected throughout the operation.
+
+Doctrinal Context (ADP 3-90, Chapter 5 -- Enabling Operations):
+{ch5}
+
+---
+
+US-5 (Force Organization and Combined Arms):
+As a division G3 (operations officer), I need the agent to recommend task organization
+-- assigning echelons and unit types to tasks based on terrain, enemy, and mission --
+following combined arms doctrine and the tactical concepts defined for the AO.
+
+Doctrinal Context (ADP 3-90, Chapter 2 -- Common Tactical Concepts and Echelons):
+{ch2}
+"""
+
+
 # ---------------------------------------------------------------------------
 # Auto-load from PDF if present (overrides built-in summary)
 # ---------------------------------------------------------------------------
@@ -303,4 +416,9 @@ if _os.path.exists(_PDF_PATH):
             DOMAIN_DOCS = _pdf_text
             _logger.info(f"DOMAIN_DOCS: loaded from PDF ({len(DOMAIN_DOCS)} chars)")
     except Exception as _e:
-        _logger.warning(f"ADP_3-90.pdf found but could not be loaded — using built-in docs: {_e}")
+        _logger.warning(f"ADP_3-90.pdf found but could not be loaded -- using built-in docs: {_e}")
+
+    _pdf_user_stories = _build_user_stories_from_pdf(_PDF_PATH)
+    if _pdf_user_stories:
+        USER_STORIES = _pdf_user_stories
+        _logger.info(f"USER_STORIES: built from PDF sections ({len(USER_STORIES)} chars)")
