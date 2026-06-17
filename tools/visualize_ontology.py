@@ -592,16 +592,70 @@ svg.on("click", () => {{
 # Colab helper
 # ---------------------------------------------------------------------------
 
+def _get_d3_js() -> str:
+    """Download D3.js v7 minified source and cache it locally."""
+    cache_path = os.path.join(os.path.dirname(__file__), "_d3v7.min.js")
+    if os.path.exists(cache_path):
+        with open(cache_path, encoding="utf-8") as f:
+            return f.read()
+    import urllib.request
+    url = "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            js = r.read().decode("utf-8")
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.write(js)
+        return js
+    except Exception:
+        return ""
+
+
+def _get_d3_js() -> str:
+    """Download D3.js v7 minified source and cache it locally."""
+    cache_path = os.path.join(os.path.dirname(__file__), "_d3v7.min.js")
+    if os.path.exists(cache_path):
+        with open(cache_path, encoding="utf-8") as f:
+            return f.read()
+    import urllib.request
+    url = "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            js = r.read().decode("utf-8")
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.write(js)
+        return js
+    except Exception:
+        return ""
+
+
 def show_in_colab(html: str, height: int = 800):
-    """Display HTML visualization inline in a Colab notebook."""
-    import base64
+    """Display HTML visualization inline in a Colab notebook.
+
+    Colab's CSP blocks external CDN scripts, so D3.js is downloaded once,
+    cached locally, and embedded inline. The full-page HTML is converted to
+    a fragment (style + d3 + body content) for safe injection into the cell.
+    """
     from IPython.display import display, HTML
-    b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
-    iframe = (
-        f'<iframe src="data:text/html;base64,{b64}" '
-        f'width="100%" height="{height}px" frameborder="0"></iframe>'
-    )
-    display(HTML(iframe))
+
+    # 1. Inline D3.js so Colab CSP doesn't block it
+    d3_src = _get_d3_js()
+    d3_tag = f"<script>{d3_src}</script>" if d3_src else ""
+
+    # 2. Extract <style>
+    style_m = re.search(r"<style>(.*?)</style>", html, re.DOTALL)
+    style_block = f"<style>{style_m.group(1)}</style>" if style_m else ""
+
+    # 3. Extract <body> content (already contains graph divs + graph <script> at end)
+    body_m = re.search(r"<body[^>]*>(.*?)</body>", html, re.DOTALL)
+    body_content = body_m.group(1) if body_m else html
+
+    # Inject: style → D3 (must come before graph script) → body content
+    fragment = f"""{style_block}
+{d3_tag}
+<div style="height:{height}px;width:100%;overflow:hidden;background:#1a1a2e">
+{body_content}
+</div>"""
+    display(HTML(fragment))
 
 
 # ---------------------------------------------------------------------------
