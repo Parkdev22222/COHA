@@ -1,5 +1,5 @@
 """
-Military domain CQ benchmark: 60 Competency Questions across 3 sub-domains.
+Military domain CQ benchmark: 75 Competency Questions across 4 sub-domains.
 Based on FM 3-0, JP 3-0, ADP 3-0, ADP 3-90.
 
 GOLD_STANDARD_TTL is loaded from domain/gold_standard.ttl if that file exists
@@ -347,23 +347,23 @@ TACTICAL_PRESCRIPTION_CQS: List[Dict] = [
     },
     {
         "id": "TP04", "subdomain": "tactical_prescriptions",
-        "question": "What required actions must a commander take before executing a penetration form of maneuver?",
-        "key_entities": ["RequiredAction", "Penetration", "FormOfManeuver", "TacticalPrescription"],
+        "question": "What required actions must a commander take before executing a penetration form of maneuver in open terrain?",
+        "key_entities": ["RequiredAction", "Penetration", "FormOfManeuver", "OpenTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP05", "subdomain": "tactical_prescriptions",
-        "question": "What actions are prohibited when conducting an envelopment to prevent fratricide?",
-        "key_entities": ["ForbiddenAction", "Envelopment", "FormOfManeuver", "TacticalPrescription"],
+        "question": "What actions are prohibited when ArmorUnit conducts an envelopment in open terrain to prevent fratricide?",
+        "key_entities": ["ForbiddenAction", "Envelopment", "FormOfManeuver", "ArmorUnit", "OpenTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP06", "subdomain": "tactical_prescriptions",
-        "question": "What is the required reserve commitment condition during an area defense to defeat a penetration?",
-        "key_entities": ["RequiredAction", "AreaDefense", "Reserve", "TacticalPrescription"],
+        "question": "What is the required reserve commitment condition when InfantryUnit conducts area defense in forested or urban terrain?",
+        "key_entities": ["RequiredAction", "AreaDefense", "Reserve", "InfantryUnit", "ForestTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP07", "subdomain": "tactical_prescriptions",
-        "question": "What actions are forbidden during a delay operation to preserve force integrity?",
-        "key_entities": ["ForbiddenAction", "Delay", "TacticalPrescription", "OperationalConstraint"],
+        "question": "What actions are forbidden when ArmorUnit conducts a delay operation in open terrain to preserve force integrity?",
+        "key_entities": ["ForbiddenAction", "Delay", "ArmorUnit", "OpenTerrain", "appliesToTerrain", "OperationalConstraint"],
     },
     {
         "id": "TP08", "subdomain": "tactical_prescriptions",
@@ -372,13 +372,13 @@ TACTICAL_PRESCRIPTION_CQS: List[Dict] = [
     },
     {
         "id": "TP09", "subdomain": "tactical_prescriptions",
-        "question": "What required actions apply when transitioning from offense to defense to consolidate gains?",
-        "key_entities": ["RequiredAction", "OffensiveMission", "DefensiveMission", "TacticalPrescription"],
+        "question": "What required actions apply when ArmorUnit transitions from offense to defense in open terrain to consolidate gains?",
+        "key_entities": ["RequiredAction", "OffensiveMission", "DefensiveMission", "ArmorUnit", "OpenTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP10", "subdomain": "tactical_prescriptions",
-        "question": "What is forbidden when conducting a withdrawal under enemy pressure without a covering force?",
-        "key_entities": ["ForbiddenAction", "Withdrawal", "CoveringForce", "TacticalPrescription"],
+        "question": "What is forbidden when InfantryUnit conducts a withdrawal under enemy pressure in urban terrain without a covering force?",
+        "key_entities": ["ForbiddenAction", "Withdrawal", "CoveringForce", "InfantryUnit", "UrbanTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP11", "subdomain": "tactical_prescriptions",
@@ -387,13 +387,13 @@ TACTICAL_PRESCRIPTION_CQS: List[Dict] = [
     },
     {
         "id": "TP12", "subdomain": "tactical_prescriptions",
-        "question": "What tactical actions are required to fix the enemy during a turning movement?",
-        "key_entities": ["RequiredAction", "TurningMovement", "FixingForce", "TacticalPrescription"],
+        "question": "What tactical actions are required when ArmorUnit executes a turning movement in open terrain to fix the enemy?",
+        "key_entities": ["RequiredAction", "TurningMovement", "FixingForce", "ArmorUnit", "OpenTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP13", "subdomain": "tactical_prescriptions",
-        "question": "What actions are prohibited during an exploitation operation to avoid losing momentum?",
-        "key_entities": ["ForbiddenAction", "Exploitation", "TacticalPrescription", "OperationalConstraint"],
+        "question": "What actions are prohibited when ArmorUnit conducts exploitation in open terrain to avoid losing momentum?",
+        "key_entities": ["ForbiddenAction", "Exploitation", "ArmorUnit", "OpenTerrain", "appliesToTerrain", "OperationalConstraint"],
     },
     {
         "id": "TP14", "subdomain": "tactical_prescriptions",
@@ -402,23 +402,23 @@ TACTICAL_PRESCRIPTION_CQS: List[Dict] = [
     },
     {
         "id": "TP15", "subdomain": "tactical_prescriptions",
-        "question": "What is the prescribed course of action when the strike force encounters unexpected resistance during mobile defense?",
-        "key_entities": ["CourseOfAction", "MobileDefense", "COAConstraint", "TacticalPrescription"],
+        "question": "What is the prescribed COA when ArmorUnit as strike force encounters unexpected resistance during mobile defense in open terrain?",
+        "key_entities": ["CourseOfAction", "MobileDefense", "COAConstraint", "ArmorUnit", "InfantryUnit", "OpenTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP16", "subdomain": "tactical_prescriptions",
-        "question": "What decision-point conditions must be met before committing the reserve during a defensive operation?",
-        "key_entities": ["RequiredAction", "Reserve", "DefensiveMission", "DecisionPoint", "TacticalPrescription"],
+        "question": "What decision-point conditions must be met before committing the reserve during a defensive operation in urban or forested terrain?",
+        "key_entities": ["RequiredAction", "Reserve", "DefensiveMission", "DecisionPoint", "UrbanTerrain", "ForestTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP17", "subdomain": "tactical_prescriptions",
-        "question": "Which combined arms actions are prescribed when Special Forces units require conventional force enablement?",
-        "key_entities": ["RequiredAction", "SpecialForcesUnit", "CourseOfAction", "TacticalPrescription"],
+        "question": "Which combined arms actions are prescribed when SpecialForcesUnit requires conventional force enablement in forest or mountain terrain?",
+        "key_entities": ["RequiredAction", "SpecialForcesUnit", "CourseOfAction", "ForestTerrain", "MountainTerrain", "appliesToTerrain"],
     },
     {
         "id": "TP18", "subdomain": "tactical_prescriptions",
-        "question": "What is the doctrinal prohibition on committing reconnaissance units to direct combat?",
-        "key_entities": ["ForbiddenAction", "SensorPlatform", "TacticalPrescription", "OperationalConstraint"],
+        "question": "What is the doctrinal prohibition on committing reconnaissance units to direct combat in open or desert terrain?",
+        "key_entities": ["ForbiddenAction", "SensorPlatform", "OpenTerrain", "DesertTerrain", "appliesToTerrain", "OperationalConstraint"],
     },
     {
         "id": "TP19", "subdomain": "tactical_prescriptions",
@@ -427,12 +427,92 @@ TACTICAL_PRESCRIPTION_CQS: List[Dict] = [
     },
     {
         "id": "TP20", "subdomain": "tactical_prescriptions",
-        "question": "What course of action constraints apply when fire support is unavailable and maneuver forces must close with the enemy?",
-        "key_entities": ["COAConstraint", "CourseOfAction", "FireSupportAsset", "TacticalPrescription", "OperationalConstraint"],
+        "question": "What COA constraints apply when fire support is unavailable and ArmorUnit or InfantryUnit must close with the enemy in open terrain?",
+        "key_entities": ["COAConstraint", "CourseOfAction", "FireSupportAsset", "ArmorUnit", "InfantryUnit", "OpenTerrain", "appliesToTerrain", "OperationalConstraint"],
     },
 ]
 
-ALL_CQS: List[Dict] = TACTICAL_GROUND_CQS + C2_CQS + ISR_CQS + TACTICAL_PRESCRIPTION_CQS
+# == Sub-domain 5: Cross-Domain Matching — Terrain × OperationType × UnitType (XD01-XD15) =
+
+CROSS_DOMAIN_CQS: List[Dict] = [
+    {
+        "id": "XD01", "subdomain": "cross_domain_matching",
+        "question": "Which unit type is most effective for a Penetration operation in OpenTerrain, and what property links it to both the terrain and the operation type?",
+        "key_entities": ["ArmorUnit", "Penetration", "OpenTerrain", "effectiveInTerrain", "preferredUnitType", "suitedForTerrain"],
+    },
+    {
+        "id": "XD02", "subdomain": "cross_domain_matching",
+        "question": "What unit type combination is required when MobileDefense is conducted in ForestTerrain, and which property expresses the support dependency?",
+        "key_entities": ["MobileDefense", "ForestTerrain", "ArmorUnit", "InfantryUnit", "preferredUnitType", "requiredSupportUnit", "suitedForTerrain"],
+    },
+    {
+        "id": "XD03", "subdomain": "cross_domain_matching",
+        "question": "Which FormOfManeuver is suited for UrbanTerrain and which unit type should lead, expressed via suitedForTerrain and preferredUnitType?",
+        "key_entities": ["FormOfManeuver", "UrbanTerrain", "InfantryUnit", "Infiltration", "suitedForTerrain", "preferredUnitType"],
+    },
+    {
+        "id": "XD04", "subdomain": "cross_domain_matching",
+        "question": "In OpenTerrain, which offensive OperationType maximises ArmorUnit effectiveness, and what property connects OperationType to Terrain?",
+        "key_entities": ["OpenTerrain", "Exploitation", "ArmorUnit", "suitedForTerrain", "effectiveInTerrain", "preferredUnitType"],
+    },
+    {
+        "id": "XD05", "subdomain": "cross_domain_matching",
+        "question": "What RequiredAction instances link InfantryUnit, Infiltration, and MountainTerrain, using both appliesToManeuver and appliesToTerrain?",
+        "key_entities": ["RequiredAction", "InfantryUnit", "Infiltration", "MountainTerrain", "appliesToManeuver", "appliesToTerrain"],
+    },
+    {
+        "id": "XD06", "subdomain": "cross_domain_matching",
+        "question": "What ForbiddenAction links ArmorUnit, Envelopment, and ForestTerrain, requiring both appliesToManeuver and appliesToTerrain?",
+        "key_entities": ["ForbiddenAction", "ArmorUnit", "Envelopment", "ForestTerrain", "InfantryUnit", "appliesToManeuver", "appliesToTerrain"],
+    },
+    {
+        "id": "XD07", "subdomain": "cross_domain_matching",
+        "question": "Which UnitMatchup instance captures InfantryUnit defeating ArmorUnit in UrbanTerrain during a Delay operation, using attackingUnit, defendingUnit, and inTerrain?",
+        "key_entities": ["UnitMatchup", "InfantryUnit", "ArmorUnit", "UrbanTerrain", "Delay", "attackingUnit", "defendingUnit", "inTerrain"],
+    },
+    {
+        "id": "XD08", "subdomain": "cross_domain_matching",
+        "question": "What requiredSupportUnit property links ArmorUnit to EngineerUnit when BreachOperation is conducted in ForestTerrain?",
+        "key_entities": ["BreachOperation", "ForestTerrain", "EngineerUnit", "ArmorUnit", "requiredSupportUnit", "appliesToTerrain"],
+    },
+    {
+        "id": "XD09", "subdomain": "cross_domain_matching",
+        "question": "Which terrain types are linked to AviationUnit via effectiveInTerrain as disadvantageous, and which OperationType should substitute in those terrains?",
+        "key_entities": ["AviationUnit", "ForestTerrain", "MountainTerrain", "Exploitation", "effectiveInTerrain", "suitedForTerrain"],
+    },
+    {
+        "id": "XD10", "subdomain": "cross_domain_matching",
+        "question": "What RequiredAction instance links ArmorUnit, UrbanTerrain, and Penetration together using appliesToTerrain and appliesToManeuver to mandate InfantryUnit support?",
+        "key_entities": ["RequiredAction", "ArmorUnit", "InfantryUnit", "UrbanTerrain", "Penetration", "appliesToTerrain", "appliesToManeuver"],
+    },
+    {
+        "id": "XD11", "subdomain": "cross_domain_matching",
+        "question": "Which OperationType is linked to DesertTerrain via suitedForTerrain when ArmorUnit has a mobility advantage, and what preferredUnitType does it specify?",
+        "key_entities": ["DesertTerrain", "ArmorUnit", "Exploitation", "Penetration", "suitedForTerrain", "preferredUnitType", "effectiveInTerrain"],
+    },
+    {
+        "id": "XD12", "subdomain": "cross_domain_matching",
+        "question": "What ForbiddenAction instance connects SpecialForcesUnit, OpenTerrain, and Attack using both appliesToTerrain and appliesToManeuver to prohibit direct combat commitment?",
+        "key_entities": ["ForbiddenAction", "SpecialForcesUnit", "OpenTerrain", "Attack", "appliesToTerrain", "appliesToManeuver"],
+    },
+    {
+        "id": "XD13", "subdomain": "cross_domain_matching",
+        "question": "Which FormOfManeuver in MountainTerrain is linked to InfantryUnit via preferredUnitType, and what RequiredActions apply via appliesToTerrain?",
+        "key_entities": ["FormOfManeuver", "MountainTerrain", "InfantryUnit", "Infiltration", "preferredUnitType", "RequiredAction", "appliesToTerrain"],
+    },
+    {
+        "id": "XD14", "subdomain": "cross_domain_matching",
+        "question": "What COAConstraint instance links ArmorUnit, Penetration, and ForestTerrain via constrainedUnitType, constrainedOperation, and constrainedTerrain to enforce InfantryUnit requirement?",
+        "key_entities": ["COAConstraint", "ArmorUnit", "Penetration", "ForestTerrain", "InfantryUnit", "constrainedUnitType", "constrainedOperation", "constrainedTerrain"],
+    },
+    {
+        "id": "XD15", "subdomain": "cross_domain_matching",
+        "question": "During AreaDefense in UrbanTerrain, which unit type is linked via effectiveInTerrain and suitedForTerrain, and what requiredSupportUnit does it depend on?",
+        "key_entities": ["AreaDefense", "UrbanTerrain", "InfantryUnit", "ArmorUnit", "suitedForTerrain", "effectiveInTerrain", "requiredSupportUnit"],
+    },
+]
+
+ALL_CQS: List[Dict] = TACTICAL_GROUND_CQS + C2_CQS + ISR_CQS + TACTICAL_PRESCRIPTION_CQS + CROSS_DOMAIN_CQS
 
 # == Gold Standard Ontology (rebuilt against doctrine + 60 CQ key_entities) ==
 # Construction: Rebuilt from ADP 3-0 (2019), ADP 3-90 (2019), FM 3-0 (2022),
