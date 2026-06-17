@@ -64,17 +64,35 @@ def _parse_with_rdflib(ttl_text: str) -> Dict:
     g = rdflib.Graph()
     g.parse(data=ttl_text, format="turtle")
 
-    # ---- Classes ----
-    classes = {}
-    for s in g.subjects(RDF.type, OWL.Class):
-        if isinstance(s, rdflib.URIRef):
-            local   = _local_name(str(s))
-            label   = str(g.value(s, RDFS.label)   or local)
-            comment = str(g.value(s, RDFS.comment) or "")
-            classes[str(s)] = {"id": str(s), "local": local, "label": label,
-                                "comment": comment, "node_type": "class"}
+    # Namespaces / URIs to treat as built-ins (never add as user-defined nodes)
+    _SKIP_NS  = (str(OWL), str(RDFS), str(RDF), "http://www.w3.org/2001/XMLSchema#")
+    _SKIP_URI = {str(OWL.Thing), str(RDFS.Resource), str(RDFS.Class)}
+    _XSD_NS   = "http://www.w3.org/2001/XMLSchema#"
 
-    # ---- Named Individuals ----
+    def _domain_uri(uri_str: str) -> bool:
+        return uri_str not in _SKIP_URI and not any(uri_str.startswith(n) for n in _SKIP_NS)
+
+    def _make_class(uri: rdflib.URIRef) -> dict:
+        local   = _local_name(str(uri))
+        label   = str(g.value(uri, RDFS.label)   or local)
+        comment = str(g.value(uri, RDFS.comment) or "")
+        return {"id": str(uri), "local": local, "label": label,
+                "comment": comment, "node_type": "class"}
+
+    # ---- 1. Explicit OWL/RDFS Classes ----
+    classes = {}
+    for rdf_type in (OWL.Class, RDFS.Class):
+        for s in g.subjects(RDF.type, rdf_type):
+            if isinstance(s, rdflib.URIRef) and _domain_uri(str(s)):
+                classes[str(s)] = _make_class(s)
+
+    # ---- 2. Infer classes from rdfs:subClassOf (many TTLs omit a owl:Class) ----
+    for s, _, o in g.triples((None, RDFS.subClassOf, None)):
+        for uri in (s, o):
+            if isinstance(uri, rdflib.URIRef) and _domain_uri(str(uri)) and str(uri) not in classes:
+                classes[str(uri)] = _make_class(uri)
+
+    # ---- 3. Named Individuals ----
     individuals = {}
     for s in g.subjects(RDF.type, OWL.NamedIndividual):
         if isinstance(s, rdflib.URIRef):
@@ -87,7 +105,7 @@ def _parse_with_rdflib(ttl_text: str) -> Dict:
                                     "comment": comment, "types": types,
                                     "node_type": "individual"}
 
-    # ---- Object Properties ----
+    # ---- 4. Explicit Object Properties ----
     object_props = {}
     for p in g.subjects(RDF.type, OWL.ObjectProperty):
         if isinstance(p, rdflib.URIRef):
@@ -98,7 +116,30 @@ def _parse_with_rdflib(ttl_text: str) -> Dict:
             object_props[str(p)] = {"id": str(p), "local": local, "label": label,
                                      "domain": domain, "range": range_}
 
-    # ---- Datatype Properties ----
+    # ---- 5. Infer object properties from rdfs:domain (without explicit typing) ----
+    for p_uri in g.subjects(RDFS.domain, None):
+        if not isinstance(p_uri, rdflib.URIRef) or not _domain_uri(str(p_uri)):
+            continue
+        if str(p_uri) in object_props:
+            continue
+        range_val = g.value(p_uri, RDFS.range)
+        # Skip if range is an XSD literal type → it's a datatype property
+        if range_val and isinstance(range_val, rdflib.URIRef) and str(range_val).startswith(_XSD_NS):
+            continue
+        local  = _local_name(str(p_uri))
+        label  = str(g.value(p_uri, RDFS.label) or local)
+        domain = str(g.value(p_uri, RDFS.domain) or "")
+        range_ = str(range_val) if isinstance(range_val, rdflib.URIRef) else ""
+        object_props[str(p_uri)] = {"id": str(p_uri), "local": local, "label": label,
+                                     "domain": domain, "range": range_}
+
+    # ---- 6. Add domain/range targets to classes if missing ----
+    for pd in list(object_props.values()):
+        for target in (pd["domain"], pd["range"]):
+            if target and _domain_uri(target) and target not in classes:
+                classes[target] = _make_class(rdflib.URIRef(target))
+
+    # ---- 7. Datatype Properties ----
     datatype_props = {}
     for p in g.subjects(RDF.type, OWL.DatatypeProperty):
         if isinstance(p, rdflib.URIRef):
@@ -109,26 +150,37 @@ def _parse_with_rdflib(ttl_text: str) -> Dict:
             datatype_props[str(p)] = {"id": str(p), "local": local, "label": label,
                                        "domain": domain, "range": range_}
 
-    # ---- subClassOf ----
+    # ---- 8. subClassOf edges (only between known classes) ----
     subclass_edges = []
     for s, _, o in g.triples((None, RDFS.subClassOf, None)):
-        if isinstance(s, rdflib.URIRef) and isinstance(o, rdflib.URIRef):
+        if (isinstance(s, rdflib.URIRef) and isinstance(o, rdflib.URIRef)
+                and str(s) in classes and str(o) in classes):
             subclass_edges.append((str(s), str(o)))
 
+    # ---- 9. Property edges ----
     all_nodes  = {**classes, **individuals}
     prop_edges = []
     seen_edges = set()
 
-    # Schema-level edges (declared domain → range)
+    # Schema edges: handle multi-value rdfs:range (e.g. :range :A, :B)
     for pid, pd in object_props.items():
-        if pd["domain"] and pd["range"]:
-            if pd["domain"] in all_nodes and pd["range"] in all_nodes:
-                key = (pd["domain"], pd["range"], pd["local"])
-                if key not in seen_edges:
-                    seen_edges.add(key)
-                    prop_edges.append({"source": pd["domain"], "target": pd["range"],
-                                       "label": pd["label"], "local": pd["local"],
-                                       "edge_kind": "schema"})
+        p_uri  = rdflib.URIRef(pid)
+        d_node = g.value(p_uri, RDFS.domain)
+        d_str  = str(d_node) if d_node else pd["domain"]
+        if not d_str or d_str not in all_nodes:
+            continue
+        for range_val in g.objects(p_uri, RDFS.range):
+            if not isinstance(range_val, rdflib.URIRef):
+                continue
+            r_str = str(range_val)
+            if r_str not in all_nodes:
+                continue
+            key = (d_str, r_str, pd["local"])
+            if key not in seen_edges:
+                seen_edges.add(key)
+                prop_edges.append({"source": d_str, "target": r_str,
+                                   "label": pd["label"], "local": pd["local"],
+                                   "edge_kind": "schema"})
 
     # Instance-level edges (actual triples between known nodes)
     _skip = {
@@ -183,16 +235,27 @@ def _parse_with_regex(ttl_text: str) -> Dict:
     for m in re.finditer(r'@prefix\s+:\s+<([^>]+)>', ttl_text):
         base_ns = m.group(1)
 
-    # owl:Class
-    for m in re.finditer(r':([\w]+)\s+a\s+owl:Class', ttl_text):
-        local = m.group(1)
-        uri   = base_ns + local
-        lm    = re.search(r':' + re.escape(local) + r'[^.]+rdfs:label\s+"([^"]+)"', ttl_text)
-        cm    = re.search(r':' + re.escape(local) + r'[^.]+rdfs:comment\s+"([^"]+)"', ttl_text)
-        classes[uri] = {"id": uri, "local": local,
-                        "label": lm.group(1) if lm else local,
-                        "comment": cm.group(1) if cm else "",
-                        "node_type": "class"}
+    def _make_cls(local):
+        uri = base_ns + local
+        lm  = re.search(r':' + re.escape(local) + r'[^.]+rdfs:label\s+"([^"]+)"', ttl_text)
+        cm  = re.search(r':' + re.escape(local) + r'[^.]+rdfs:comment\s+"([^"]+)"', ttl_text)
+        return uri, {"id": uri, "local": local,
+                     "label": lm.group(1) if lm else local,
+                     "comment": cm.group(1) if cm else "",
+                     "node_type": "class"}
+
+    # owl:Class / rdfs:Class
+    for m in re.finditer(r':([\w]+)\s+a\s+(?:owl|rdfs):Class', ttl_text):
+        uri, entry = _make_cls(m.group(1))
+        classes[uri] = entry
+
+    # Infer classes from rdfs:subClassOf  (:A rdfs:subClassOf :B)
+    for m in re.finditer(r':([\w]+)\s+[^.]*?rdfs:subClassOf\s+:([\w]+)', ttl_text):
+        for local in (m.group(1), m.group(2)):
+            uri = base_ns + local
+            if uri not in classes:
+                _, entry = _make_cls(local)
+                classes[uri] = entry
 
     # owl:NamedIndividual
     for m in re.finditer(r':([\w]+)\s+a\s+owl:NamedIndividual', ttl_text):
@@ -219,6 +282,31 @@ def _parse_with_regex(ttl_text: str) -> Dict:
                               "domain": base_ns + dm.group(1) if dm else "",
                               "range":  base_ns + rm.group(1) if rm else ""}
 
+    # Infer object properties from rdfs:domain lines (without explicit typing)
+    # Pattern: :propName rdfs:domain :ClassName (on one logical statement)
+    for m in re.finditer(
+        r':([\w]+)\s+rdfs:(?:label\s+"[^"]+"\s*[;,]\s*)?domain\s+:([\w]+)',
+        ttl_text, re.MULTILINE
+    ):
+        local, domain_local = m.group(1), m.group(2)
+        uri = base_ns + local
+        if uri in object_props:
+            continue
+        lm = re.search(r':' + re.escape(local) + r'[^.]+rdfs:label\s+"([^"]+)"', ttl_text)
+        rm = re.search(r':' + re.escape(local) + r'[^.]+rdfs:range\s+:([\w]+)',  ttl_text)
+        object_props[uri] = {"id": uri, "local": local,
+                              "label":  lm.group(1) if lm else local,
+                              "domain": base_ns + domain_local,
+                              "range":  base_ns + rm.group(1) if rm else ""}
+
+    # Add domain/range targets to classes if missing
+    for pd in list(object_props.values()):
+        for target in (pd["domain"], pd["range"]):
+            if target and target not in classes and target.startswith(base_ns):
+                local = target[len(base_ns):]
+                _, entry = _make_cls(local)
+                classes[target] = entry
+
     # owl:DatatypeProperty
     for m in re.finditer(r':([\w]+)\s+a\s+owl:DatatypeProperty', ttl_text):
         local = m.group(1)
@@ -231,9 +319,11 @@ def _parse_with_regex(ttl_text: str) -> Dict:
                                 "domain": base_ns + dm.group(1) if dm else "",
                                 "range":  "xsd:" + rm.group(1) if rm else ""}
 
-    # subClassOf
-    for m in re.finditer(r':([\w]+)\s+[^.]*rdfs:subClassOf\s+:([\w]+)', ttl_text):
-        subclass_edges.append((base_ns + m.group(1), base_ns + m.group(2)))
+    # subClassOf edges (only between known classes)
+    for m in re.finditer(r':([\w]+)\s+[^.]*?rdfs:subClassOf\s+:([\w]+)', ttl_text):
+        su, ou = base_ns + m.group(1), base_ns + m.group(2)
+        if su in classes and ou in classes:
+            subclass_edges.append((su, ou))
 
     all_nodes  = {**classes, **individuals}
     seen_edges = set()
