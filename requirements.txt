@@ -1,4 +1,6 @@
 anthropic>=0.40.0
+rdflib>=6.0.0
+pymupdf>=1.23.0
 owlready2>=0.46
 numpy>=1.26.0
 pandas>=2.2.0
