@@ -598,25 +598,7 @@ svg.on("click", () => {{
 # ---------------------------------------------------------------------------
 
 def _get_d3_js() -> str:
-    """Download D3.js v7 minified source and cache it locally."""
-    cache_path = os.path.join(os.path.dirname(__file__), "_d3v7.min.js")
-    if os.path.exists(cache_path):
-        with open(cache_path, encoding="utf-8") as f:
-            return f.read()
-    import urllib.request
-    url = "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"
-    try:
-        with urllib.request.urlopen(url, timeout=30) as r:
-            js = r.read().decode("utf-8")
-        with open(cache_path, "w", encoding="utf-8") as f:
-            f.write(js)
-        return js
-    except Exception:
-        return ""
-
-
-def _get_d3_js() -> str:
-    """Download D3.js v7 minified source and cache it locally."""
+    """Download D3.js v7 minified source and cache locally."""
     cache_path = os.path.join(os.path.dirname(__file__), "_d3v7.min.js")
     if os.path.exists(cache_path):
         with open(cache_path, encoding="utf-8") as f:
@@ -636,37 +618,27 @@ def _get_d3_js() -> str:
 def show_in_colab(html: str, height: int = 800):
     """Display HTML visualization inline in a Colab notebook.
 
-    Colab's CSP blocks external CDN scripts, so D3.js is downloaded once,
-    cached locally, and embedded inline. The HTML is rendered as a fragment:
-    style → inline D3 → #coha-root div (with explicit height) + graph script.
+    Embeds D3.js inline (CDN blocked by Colab CSP) and renders via
+    base64 data-URL iframe so the full document context (body CSS, flex) works.
     """
+    import base64
     from IPython.display import display, HTML
 
-    # 1. Inline D3.js (CDN blocked by Colab CSP)
+    # Replace CDN script tag with inline D3 source
     d3_src = _get_d3_js()
-    d3_tag = f"<script>{d3_src}</script>" if d3_src else ""
+    if d3_src:
+        html = html.replace(
+            '<script src="https://d3js.org/d3.v7.min.js"></script>',
+            f"<script>{d3_src}</script>",
+        )
 
-    # 2. Extract <style>
-    style_m = re.search(r"<style>(.*?)</style>", html, re.DOTALL)
-    style_block = f"<style>{style_m.group(1)}</style>" if style_m else ""
-
-    # 3. Extract #coha-root div (contains header/controls/graph divs)
-    root_m = re.search(r'(<div id="coha-root">.*?</div>)\s*\n\s*<script', html, re.DOTALL)
-    root_html = root_m.group(1) if root_m else ""
-
-    # 4. Extract inline graph <script> (the D3 code, not the CDN tag)
-    scripts = re.findall(r"<script(?!\s+src)[^>]*>(.*?)</script>", html, re.DOTALL)
-    graph_script = "\n".join(s for s in scripts if "GRAPH" in s or "forceSimulation" in s)
-
-    # Override #coha-root height so flex chain works inside Colab cell
-    height_override = f"<style>#coha-root{{height:{height}px!important}}</style>"
-
-    fragment = f"""{style_block}
-{height_override}
-{d3_tag}
-{root_html}
-<script>{graph_script}</script>"""
-    display(HTML(fragment))
+    b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
+    iframe = (
+        f'<iframe src="data:text/html;base64,{b64}" '
+        f'width="100%" height="{height}px" '
+        f'frameborder="0" style="border:none;display:block"></iframe>'
+    )
+    display(HTML(iframe))
 
 
 # ---------------------------------------------------------------------------
