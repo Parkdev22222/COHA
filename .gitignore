@@ -11,3 +11,9 @@ build/
 .pytest_cache/
 .mypy_cache/
 *.log
+
+# Doctrine PDF files (too large for git — place at domain/ADP_3-90.pdf locally)
+domain/*.pdf
+
+# Generated gold standard (rebuild with: python domain/build_gold_standard.py)
+domain/gold_standard.ttl

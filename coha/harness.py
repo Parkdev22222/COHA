@@ -99,6 +99,7 @@ class HarnessConfig:
     max_retries: int = 3
     name: str = "COHA-full"
     use_metacognition: bool = False  # Ontogenia-style 2-phase generation with ODP injection
+    seed_ttl: str = ""  # pre-built ontology to warm-start from (e.g. OntoGPT output)
 
     @classmethod
     def coha_full(cls):
@@ -128,6 +129,16 @@ class HarnessConfig:
             gate_config=GateConfig.coha_full(),
             name="COHA+Ontogenia",
             use_metacognition=True,
+        )
+
+    @classmethod
+    def coha_ontogpt(cls, seed_ttl: str = ""):
+        """COHA+OntoGPT: full COHA gate warm-started from an OntoGPT-extracted ontology."""
+        return cls(
+            context_reset=True,
+            gate_config=GateConfig.coha_full(),
+            name="COHA+OntoGPT",
+            seed_ttl=seed_ttl,
         )
 
     @classmethod
@@ -165,8 +176,30 @@ class COHAHarness:
         except Exception:
             guides_dir = os.path.join(os.path.dirname(__file__), "..", "results", "guides")
 
-        handoff = HandoffArtifact.initial()
-        accumulated_ttl = ""  # only used for vanilla (no-reset)
+        # Warm-start: pre-populate accumulated ontology from seed_ttl (e.g. OntoGPT output).
+        if self.config.seed_ttl:
+            seed_classes = extract_class_names(self.config.seed_ttl)
+            seed_props = extract_property_names(self.config.seed_ttl)
+            seed_consistent = check_consistency(self.config.seed_ttl)
+            handoff = HandoffArtifact(
+                iteration=0,
+                accumulated_ontology=AccumulatedOntology(
+                    classes=seed_classes,
+                    properties=seed_props,
+                    axioms=[],
+                    consistency="VALID" if seed_consistent else "UNKNOWN",
+                    ttl=self.config.seed_ttl,
+                ),
+            )
+            accumulated_ttl = self.config.seed_ttl
+            print(
+                f"  [{self.config.name}] Warm start: "
+                f"{len(seed_classes)} classes, {len(seed_props)} props from seed ontology."
+            )
+        else:
+            handoff = HandoffArtifact.initial()
+            accumulated_ttl = ""  # only used for vanilla (no-reset)
+
         qic_data = []   # [(cq_index, cq_text, ccr_so_far)]
         rar_data = []   # [(cq_index, n_rules_added)]
         gate_times = []
