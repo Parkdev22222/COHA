@@ -49,8 +49,24 @@ def _extract_elements(ttl_path: str) -> Tuple[Dict, Dict, Dict, Dict, str]:
     Each dict maps  uri → local_name.
     """
     import rdflib
+    from coha.owl_utils import repair_turtle
+
+    raw = open(ttl_path, encoding="utf-8").read()
     g = rdflib.Graph()
-    g.parse(ttl_path, format="turtle")
+    try:
+        g.parse(data=raw, format="turtle")
+    except Exception as first_err:
+        logger.warning("TTL parse error — attempting auto-repair: %s", first_err)
+        repaired = repair_turtle(raw)
+        if not repaired.strip():
+            raise ValueError(f"Could not repair {ttl_path}: {first_err}") from first_err
+        try:
+            g.parse(data=repaired, format="turtle")
+            logger.info("Auto-repair succeeded; repaired TTL loaded.")
+        except Exception as second_err:
+            raise ValueError(
+                f"Auto-repair of {ttl_path} still failed: {second_err}"
+            ) from second_err
 
     OWL  = rdflib.OWL
     RDFS = rdflib.RDFS

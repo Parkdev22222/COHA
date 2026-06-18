@@ -105,20 +105,88 @@ def _is_valid_turtle(ttl: str) -> bool:
         return False
 
 
+def _repair_turtle_blocks(ttl: str) -> str:
+    """Block-level Turtle repair: split on blank lines, keep only valid blocks.
+
+    Applied when _filter_turtle_lines still leaves invalid Turtle — extracts
+    the salvageable triples by testing each blank-line-separated block
+    individually against rdflib.
+    """
+    blocks = re.split(r'\n{2,}', ttl.strip())
+    valid_blocks = []
+    for block in blocks:
+        stripped = block.strip()
+        if not stripped:
+            continue
+        # Comments and prefix declarations are always safe to keep
+        if stripped.startswith('#') or stripped.startswith('@prefix'):
+            valid_blocks.append(block)
+            continue
+        test = BASE_PREFIXES + "\n" + stripped
+        if _is_valid_turtle(test):
+            valid_blocks.append(block)
+        else:
+            logger.debug("merge_ontologies: discarded invalid Turtle block: %r", stripped[:80])
+    return "\n\n".join(valid_blocks)
+
+
+def repair_turtle(ttl: str) -> str:
+    """Best-effort repair of an existing Turtle string.
+
+    Applies the full cleaning pipeline:
+      1. Strip markdown code fences
+      2. Fix common @prefix syntax errors
+      3. Strip obvious prose lines
+      4. Block-level repair (keep only individually-valid blank-line blocks)
+
+    Returns the repaired string (may be empty if nothing is salvageable).
+    Useful for post-processing COHA output files before feeding them to
+    rdflib-based tools such as merge_synonyms or visualize_ontology.
+    """
+    ttl = _strip_code_fence(ttl)
+    ttl = _fix_prefix_declarations(ttl)
+    if _is_valid_turtle(ttl):
+        return ttl
+    ttl = _filter_turtle_lines(ttl)
+    if _is_valid_turtle(ttl):
+        return ttl
+    return _repair_turtle_blocks(ttl)
+
+
 def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
-    """Merge delta-Oi into accumulated ontology, deduplicating prefixes."""
+    """Merge delta-Oi into accumulated ontology, deduplicating prefixes.
+
+    Repair pipeline applied to delta_oi (in order, stopping at first success):
+      1. Strip markdown code fences
+      2. Fix common @prefix syntax errors
+      3. Filter prose-only lines  (only on parse failure)
+      4. Block-level repair       (only if step 3 still leaves invalid Turtle)
+    Post-merge validation: if the merged result is invalid, discard delta and
+    return base_ttl unchanged to prevent cascading corruption.
+    """
     # Defensive: strip code fence and fix common @prefix syntax errors
     delta_oi = _strip_code_fence(delta_oi)
     delta_oi = _fix_prefix_declarations(delta_oi)
-    # If delta_oi still fails to parse (e.g. LLM prose mixed in), strip prose-only lines
-    # and retry.  ONLY filter on failure — valid Turtle must never be modified.
+
     if delta_oi.strip() and not _is_valid_turtle(BASE_PREFIXES + "\n" + delta_oi.strip()):
+        # Step 3: filter prose-only lines
         filtered = _filter_turtle_lines(delta_oi)
         if filtered.strip():
             logger.debug("merge_ontologies: stripped non-Turtle prose lines from delta_oi")
             delta_oi = filtered
+        # Step 4: block-level repair if prose filter wasn't enough
+        if delta_oi.strip() and not _is_valid_turtle(BASE_PREFIXES + "\n" + delta_oi.strip()):
+            repaired = _repair_turtle_blocks(delta_oi)
+            if repaired.strip():
+                logger.debug("merge_ontologies: applied block-level repair to delta_oi")
+                delta_oi = repaired
+
     if not base_ttl.strip():
-        return BASE_PREFIXES + "\n" + delta_oi.strip()
+        candidate = BASE_PREFIXES + "\n" + delta_oi.strip()
+        if not _is_valid_turtle(candidate):
+            logger.warning("merge_ontologies: delta_oi is still invalid after all repairs; starting with empty ontology")
+            return BASE_PREFIXES
+        return candidate
     if not delta_oi.strip():
         return base_ttl
 
@@ -135,7 +203,17 @@ def merge_ontologies(base_ttl: str, delta_oi: str) -> str:
     delta_clean = "\n".join(filtered_lines).strip()
     if not delta_clean:
         return base_ttl
-    return base_ttl.rstrip() + "\n\n# --- CQ delta ---\n" + delta_clean + "\n"
+
+    merged = base_ttl.rstrip() + "\n\n# --- CQ delta ---\n" + delta_clean + "\n"
+
+    # Post-merge validation: if merging somehow produced invalid Turtle, discard delta.
+    if not _is_valid_turtle(merged):
+        logger.warning(
+            "merge_ontologies: merged result failed validation; discarding delta to protect accumulated ontology"
+        )
+        return base_ttl
+
+    return merged
 
 
 def check_consistency(ontology_ttl: str) -> bool:
